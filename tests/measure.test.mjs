@@ -1,11 +1,14 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
+import { spawnSync } from 'node:child_process'
 import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { fileURLToPath } from 'node:url'
 
 import { expandPaths, measure, projectDir } from '../scripts/measure.mjs'
 
+const MEASURE = fileURLToPath(new URL('../scripts/measure.mjs', import.meta.url))
 const SECRET = 'sk-ant-SECRET-PROMPT-TEXT'
 
 const assistant = (id, usage, content) => ({ type: 'assistant', uuid: id, message: { id, usage, content } })
@@ -82,4 +85,29 @@ test('a directory argument expands to its .jsonl files, sorted, and other argume
 test('projectDir maps a working directory to its transcript folder', () => {
   assert.equal(projectDir('/Users/me/workspaces/monte3l/m3l-output-governor', '/home'), '/home/.claude/projects/-Users-me-workspaces-monte3l-m3l-output-governor')
   assert.equal(projectDir('/Users/me/.claude/x y', '/home'), '/home/.claude/projects/-Users-me--claude-x-y')
+})
+
+test('a directory argument also expands to each session\'s subagent transcripts, and measure counts them', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'm3l-og-sub-'))
+  const row = JSON.stringify(assistant('a', usage(5, 0), []))
+  writeFileSync(join(dir, 's1.jsonl'), row)
+  mkdirSync(join(dir, 's1', 'subagents'), { recursive: true })
+  writeFileSync(join(dir, 's1', 'subagents', 'agent-x.jsonl'), JSON.stringify(assistant('b', usage(7, 0), [])))
+  writeFileSync(join(dir, 's1', 'subagents', 'notes.txt'), '')
+  const files = expandPaths([dir])
+  assert.deepEqual(files.map(p => p.slice(dir.length + 1)), ['s1.jsonl', join('s1', 'subagents', 'agent-x.jsonl')])
+  const m = measure(files)
+  assert.equal(m.sessions, 2)
+  assert.equal(m.subagentFiles, 1)
+  assert.equal(m.exact.output, 12)
+})
+
+test('the CLI rejects unknown flags, and exits 2 when no path is readable without printing the path', () => {
+  for (const args of [['--help'], ['--gate=4000', 'x.jsonl'], ['--gate', '0', 'x.jsonl']]) {
+    assert.equal(spawnSync('node', [MEASURE, ...args], { encoding: 'utf8' }).status, 2, args.join(' '))
+  }
+  const r = spawnSync('node', [MEASURE, `/nonexistent/${SECRET}.jsonl`], { encoding: 'utf8' })
+  assert.equal(r.status, 2)
+  assert.match(r.stderr, /skipped: 1 unreadable path\(s\)/)
+  assert.ok(!r.stdout.includes('SECRET') && !r.stderr.includes('SECRET'))
 })

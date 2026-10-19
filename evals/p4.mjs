@@ -25,6 +25,10 @@ const testsPass = dir => {
   return spawnSync('node', ['--test', 'tests/measure.test.mjs'], { cwd: dir, encoding: 'utf8', env }).status === 0
 }
 
+// Left out of the fixture: git history, the eval itself and its test (so the one failing test is the seeded one),
+// the project memory and notes that describe the seeded bug, and installed dependencies.
+const EXCLUDED = /\/(\.git|evals|\.claude|node_modules|UNVERIFIED\.md|tests\/evals\.test\.mjs)(\/|$)/
+
 /**
  * A scratch copy of this repository with a seeded boundary bug in scripts/measure.mjs (`>=` made `>`),
  * two commits and one uncommitted change that logs a transcript path. Built from the working tree, so
@@ -32,7 +36,7 @@ const testsPass = dir => {
  */
 export const buildFixture = (root = repoRoot) => {
   const dir = mkdtempSync(join(tmpdir(), 'p4-template-'))
-  cpSync(root, dir, { recursive: true, filter: src => !/\/(\.git|evals)(\/|$)/.test(src.slice(root.length)) })
+  cpSync(root, dir, { recursive: true, filter: src => !EXCLUDED.test(src.slice(root.length)) })
   const file = join(dir, 'scripts/measure.mjs')
   const source = readFileSync(file, 'utf8')
   if (!source.includes('if (r.chars >= gateChars) {')) throw new Error('fixture seed text not found in scripts/measure.mjs')
@@ -126,8 +130,9 @@ const main = () => {
     appendFileSync(out, JSON.stringify(row) + '\n')
     rmSync(dir, { recursive: true, force: true })
     spent += row.cost ?? 0
-    if (row.error) { console.log(`ERROR ${task.id} ${arm} rep${rep}: ${row.error}; stopping`); process.exit(3) }
+    if (row.error) { console.log(`ERROR ${task.id} ${arm} rep${rep}: ${row.error}; stopping`); process.exitCode = 3; return false }
     console.log(`${task.id} ${arm} rep${rep} cost=${row.cost?.toFixed(4)} out=${row.outputTokens} think=${row.thinkingTokens} pass=${row.pass} style=${row.style} spent=${spent.toFixed(3)}`)
+    return true
   }
 
   try {
@@ -137,14 +142,14 @@ const main = () => {
         for (const arm of order) {
           if (done.has(`${task.id}|${arm}|${rep}`)) continue
           if (spent > maxSpend) { console.log(`spend guard hit at ${spent.toFixed(3)}; stopping`); break outer }
-          runOne(task, arm, rep, order.join('>'))
+          if (!runOne(task, arm, rep, order.join('>'))) break outer
         }
       }
     }
   } finally {
     rmSync(template, { recursive: true, force: true })
   }
-  console.log(`done, spent ${spent.toFixed(3)}; results in ${out}`)
+  if (!process.exitCode) console.log(`done, spent ${spent.toFixed(3)}; results in ${out}`)
 }
 
 if (import.meta.url === pathToFileURL(process.argv[1] ?? '').href) main()

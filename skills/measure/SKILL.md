@@ -13,13 +13,13 @@ The numbers below were computed just now from this project's session transcripts
 node "${CLAUDE_PLUGIN_ROOT}/scripts/measure.mjs" --project
 ```
 
-If `sessions` is 0, say that no transcripts were found for this directory and stop.
+If `sessions` is 0, or the command printed an error, say that no transcripts were found for this directory and stop. `subagentFiles` is how many of the counted transcripts belong to subagents.
 
 Otherwise report, in this order, labelling each number **exact** (the `exact` block, from API usage) or **estimated** (the `estimated` block, derived from characters):
 
 1. **Output and thinking.** Output tokens, and `thinkingShareOfOutput`. Thinking is billed as output, and effort level is the documented lever for it (Claude Code docs, `costs`).
 2. **Large Bash results.** `bashOverGate` results of `gateChars` characters or more, and `bashOverGateShareOfBilledInput`. Below 0.10, shrinking tool results is not worth building; this project measured about 0.02 on its author's sessions. The estimate ignores compaction, so it overstates.
-3. **Which lever the numbers support**, in one or two sentences, chosen from the README's "Levers" table: effort when the thinking share is large, the built-in Concise style when answers are long, `bashOutputMaxChars` only when the Bash share clears 0.10.
+3. **Which lever the numbers support**, in one or two sentences, chosen from the "Levers" table in `${CLAUDE_PLUGIN_ROOT}/README.md`: effort when the thinking share is large, the built-in Concise style when answers are long (`exact.textAndToolUse` is large next to `exact.output`), `bashOutputMaxChars` only when the Bash share clears 0.10.
 
 Then state the limits plainly: transcripts of this project only, and the re-read figure is a model, not a measurement.
 

@@ -15,11 +15,12 @@ chosen from data. It is a separate project from m3l-prompt-optimizer, which
 rewrites typed prompts.
 
 A tool-result shrinking hook was designed and **rejected**: over 359 real
-sessions, Bash results over 8,000 characters carried about 2% of billed input
+sessions, Bash results of 8,000 characters or more carried about 2% of billed input
 (`UNVERIFIED.md`, Closed item 2). Do not rebuild it without rerunning
 `scripts/measure.mjs` on a workload that clears 10% at the planned gate.
 
-There is no package.json, no npm install, no build and no runtime dependency.
+There is no package.json at the repository root, no build and no runtime dependency (the only
+`package.json` is in `.github/ci-tools/`, which pins the Claude Code that CI uses).
 Scripts are plain Node `.mjs`. The README is the user-facing spec.
 `UNVERIFIED.md` records what was confirmed by a live check and what is open.
 
@@ -38,10 +39,10 @@ Scripts are plain Node `.mjs`. The README is the user-facing spec.
 
 | File | Role |
 | --- | --- |
-| `scripts/measure.mjs` | `measure(files, { gateChars })` returns exact usage totals (including the thinking split from `usage.output_tokens_details.thinking_tokens`) and estimates derived from characters. The CLI wrapper only parses arguments |
-| `tests/measure.test.mjs` | Synthetic transcripts: totals, duplicate message ids, the gate, the counts-only invariant, unreadable files |
+| `scripts/measure.mjs` | `measure(files, { gateChars })` returns exact usage totals (including the thinking split from `usage.output_tokens_details.thinking_tokens`) and estimates derived from characters. The CLI wrapper parses arguments, resolves `--project` from the current directory, expands directories (including each session's `subagents/`), rejects unknown `--` flags with exit 2, and reports a count of unreadable paths on stderr |
+| `tests/measure.test.mjs` | Synthetic transcripts: totals, duplicate message ids, the gate, the counts-only invariant, unreadable files, `expandPaths` (directories and `subagents/`), `projectDir`, and the CLI's flag handling and exit codes |
 | `evals/p4.mjs` | `buildFixture()` makes a scratch copy of this repo with a seeded `>` bug, two commits and an uncommitted diff; `TASKS` holds 8 prompts with objective checks; the runner pairs default and Concise runs, stops at the first error row and resumes past valid ones |
-| `evals/summarize.mjs` | `summarize(rows)` pairs runs by task and rep, drops errored runs, and returns totals, per-task medians and bootstrap intervals |
+| `evals/summarize.mjs` | `summarize(rows)` pairs runs by task and rep, drops errored runs, and returns totals, per-task medians and bootstrap intervals (5000 resamples, fixed seed 12345). `pairUp`, `validRows` and `toMarkdown` are exported too |
 | `evals/p4-2026-10-19.jsonl`, `evals/results.md` | The recorded run (counts only, no answer text) and its reading |
 | `tests/evals.test.mjs` | Dry run spawns nothing, pairing and summary maths, the fixture, the task checks |
 | `skills/measure/SKILL.md` | The plugin's one skill, `/m3l-output-governor:measure`. It injects `measure.mjs --project` output with the `!` shell syntax and has Claude interpret it. User-invoked only |
@@ -58,7 +59,7 @@ Constraints that are not obvious from one file:
   derived from characters (characters divided by 4, re-read counts) is an estimate,
   and the re-read figure ignores compaction, so it overstates.
 - **Count an assistant message once.** Transcripts can repeat a message id; the
-  script de-duplicates on `message.id`.
+  script de-duplicates on `message.id` (falling back to the row `uuid`), within each file.
 - **A live eval never runs by default.** `evals/p4.mjs` is a dry run until `--live`, and it
   spends money on whichever credential `claude` resolves (a shell `ANTHROPIC_API_KEY` wins over
   the claude.ai login). Get approval for the cost first. A spend-limit error returns a zero-token
@@ -67,8 +68,9 @@ Constraints that are not obvious from one file:
   the child environment when a test or the runner spawns `node --test` (see `testsPass` in
   `evals/p4.mjs` and `tests/evals.test.mjs`).
 - **Keep `disable-model-invocation: true` on the measure skill.** It reads the user's session
-  history, so only the user may trigger it. Its `allowed-tools` pre-approves the injected
-  `node` command; the skill report must stay counts only.
+  history, so only the user may trigger it. Its `allowed-tools` is `Bash(node *)`, which
+  pre-approves any `node` command while the skill runs, not only the injected one
+  (narrowing it to the script path was not verified); the skill report must stay counts only.
 - **Claims about Claude Code behaviour cite a code.claude.com page** or are marked
   unconfirmed in `UNVERIFIED.md`.
 - **No LLM rewriting of assistant prose, no `MessageDisplay` for savings, no
