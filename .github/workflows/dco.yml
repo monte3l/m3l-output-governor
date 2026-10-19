@@ -1,0 +1,76 @@
+name: DCO
+
+# Checks that every non-merge commit a pull request adds carries a
+# `Signed-off-by: Name <email>` trailer matching its author or committer email
+# (`git commit -s`). The org CONTRIBUTING.md asks for it, and OpenSSF Best
+# Practices wants a status check that enforces it.
+#
+# Dependabot is exempt, but only when the pull request was opened by it
+# (`pull_request.user.login`, which a commit author field cannot forge) and the
+# commit's author is the same bot. It signs off as support@github.com, which is
+# not its author email. `--no-divider` matters: a Dependabot body holds a `---`
+# line that `git interpret-trailers` would otherwise read as the end of the
+# message. The range and author arrive through env, never inline in the script.
+#
+# This is a copy of m3l-groundwork's `dco` job. To make it a required check, add
+# `DCO sign-off` to the `main` ruleset after the first run reports it.
+on:
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  dco:
+    name: DCO sign-off
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+      - name: Check every commit in the pull request is signed off
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          PR_AUTHOR: ${{ github.event.pull_request.user.login }}
+        run: |
+          if [ -z "$BASE_SHA" ] || [ -z "$HEAD_SHA" ]; then
+            echo "pull request event without a base or head commit -- failing closed" >&2
+            exit 1
+          fi
+          checked=0
+          bad=0
+          for sha in $(git rev-list --no-merges "${BASE_SHA}..${HEAD_SHA}"); do
+            author="$(git log -1 --format=%an "$sha")"
+            short="$(git log -1 --format='%h %s' "$sha")"
+            if [ "${PR_AUTHOR}|${author}" = "dependabot[bot]|dependabot[bot]" ]; then
+              echo "skip   $short (first-party automation: $author)"
+              continue
+            fi
+            checked=$((checked + 1))
+            author_email="$(git log -1 --format=%ae "$sha" | tr '[:upper:]' '[:lower:]')"
+            committer_email="$(git log -1 --format=%ce "$sha" | tr '[:upper:]' '[:lower:]')"
+            ok=0
+            while IFS= read -r line; do
+              # `Signed-off-by: Name <email>`, exactly one angle-bracketed address.
+              email="$(printf '%s\n' "$line" | sed -nE 's/^Signed-off-by: .+ <([^<>[:space:]]+@[^<>[:space:]]+)>$/\1/p' | tr '[:upper:]' '[:lower:]')"
+              if [ -n "$email" ] && { [ "$email" = "$author_email" ] || [ "$email" = "$committer_email" ]; }; then
+                ok=1
+              fi
+            done < <(git log -1 --format=%B "$sha" | git interpret-trailers --parse --no-divider)
+            if [ "$ok" -eq 1 ]; then
+              echo "ok     $short"
+            else
+              echo "::error title=Missing DCO sign-off::$short has no Signed-off-by trailer matching its author or committer email (git commit -s, or git commit --amend -s --no-edit)"
+              bad=$((bad + 1))
+            fi
+          done
+          echo "checked $checked commit(s), $bad without a valid sign-off"
+          [ "$bad" -eq 0 ]

@@ -60,7 +60,10 @@ defects. Do not "fix" the first one into a standing bypass.
 | Check | Score | Why it stays |
 | --- | --- | --- |
 | Branch-Protection | 8 | The top tier asks for two approvals. The organization has two members, so a PR has one reviewer who is not its author, and requiring two would block every merge unless a standing bypass existed. The `main` ruleset has an empty bypass list on purpose. Every other protection is on: a code-owner approval, approval of the last push, stale-review dismissal, an up-to-date branch, required checks, signed commits, and no force-push or deletion |
-| Code-Review | 4 | The first commits landed before the `main` ruleset existed. Every PR since needs a code-owner approval, so the approved share rises as PRs merge |
+| Code-Review | 6 | The first commits landed before the `main` ruleset existed. Every PR since needs a code-owner approval, so the approved share rises as PRs merge. The alert is dismissed only until the score reaches 10 |
 | Maintained | 0 | Scorecard scores any repository under 90 days old as 0. This one was created on 2026-10-19, so it resolves itself in January 2027 |
 | Fuzzing | 0 | Not applicable. The inputs are the maintainer's own local session transcripts and command-line arguments, not an untrusted network or binary parser. A fuzzing library would also end the repository's no-dependency rule |
-| CII-Best-Practices | 0 | The project is not registered for an OpenSSF Best Practices badge. This is an open external gap, not a decision against it |
+
+The OpenSSF Best Practices badge is a real gap, not an accepted one. The
+project registers for it, and the alert stays open until the badge reaches
+Passing.
