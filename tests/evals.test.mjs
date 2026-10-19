@@ -1,7 +1,8 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { spawnSync } from 'node:child_process'
-import { rmSync } from 'node:fs'
+import { existsSync, rmSync } from 'node:fs'
+import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 import { buildFixture, TASKS } from '../evals/p4.mjs'
@@ -28,6 +29,7 @@ test('errored and empty runs are excluded and an unpaired run is dropped', () =>
     row('T3', 'default', 1, 50),
   ]
   assert.equal(validRows(rows).length, 4)
+  assert.equal(validRows([...rows, row('T4', 'default', 1, 0)]).length, 4)
   assert.deepEqual(pairUp(rows).map(p => p.task), ['T1'])
   assert.equal(summarize(rows).excludedErrorRuns, 1)
 })
@@ -62,7 +64,9 @@ test('the fixture has a failing test, two commits and one uncommitted change', (
     // A nested `node --test` inherits NODE_TEST_CONTEXT from this runner and then reports success, so drop it.
     const { NODE_TEST_CONTEXT, ...env } = process.env
     const run = (cmd, args) => spawnSync(cmd, args, { cwd: dir, encoding: 'utf8', env })
-    assert.notEqual(run('node', ['--test', 'tests/measure.test.mjs']).status, 0)
+    assert.notEqual(run('node', ['--test', 'tests/*.test.mjs']).status, 0)
+    assert.equal(run('node', ['--test', 'tests/*.test.mjs']).stdout.match(/^ℹ fail (\d+)/m)?.[1], '1')
+    for (const gone of ['.claude', 'UNVERIFIED.md', 'node_modules', 'evals', 'tests/evals.test.mjs']) assert.equal(existsSync(join(dir, gone)), false, gone)
     assert.equal(run('git', ['rev-list', '--count', 'HEAD']).stdout.trim(), '2')
     assert.equal(run('git', ['status', '--short']).stdout.trimEnd(), ' M scripts/measure.mjs')
     assert.match(run('git', ['diff']).stdout, /\+\s+console\.error\('reading', file\)/)
@@ -71,7 +75,7 @@ test('the fixture has a failing test, two commits and one uncommitted change', (
   }
 })
 
-test('each task has an id, a prompt, tools and a check that rejects empty text', () => {
+test('each task has an id, a prompt, tools and a check that rejects empty text (T3-fix runs the tests instead)', () => {
   assert.equal(TASKS.length, 8)
   for (const t of TASKS.filter(t => t.id !== 'T3-fix')) {
     assert.ok(t.id && t.prompt && t.tools)

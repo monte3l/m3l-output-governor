@@ -32,15 +32,29 @@ const parse = file => {
 /** Where Claude Code keeps a project's transcripts: the working directory with every non-alphanumeric character as `-`. */
 export const projectDir = (cwd, home = homedir()) => join(home, '.claude', 'projects', cwd.replace(/[^A-Za-z0-9]/g, '-'))
 
-/** A directory argument stands for the `.jsonl` transcripts directly inside it; a file argument stands for itself. */
+const isSubagentFile = file => /[\\/]subagents[\\/]/.test(file)
+
+const jsonlIn = dir => {
+  try {
+    return readdirSync(dir)
+      .filter(name => name.endsWith('.jsonl') && statSync(join(dir, name)).isFile())
+      .sort()
+      .map(name => join(dir, name))
+  } catch {
+    return []
+  }
+}
+
+/**
+ * A directory argument stands for the `.jsonl` transcripts directly inside it plus each session's
+ * `<session>/subagents/*.jsonl`; a file argument stands for itself.
+ */
 export const expandPaths = args =>
   args.flatMap(arg => {
     try {
       if (!statSync(arg).isDirectory()) return [arg]
-      return readdirSync(arg)
-        .filter(name => name.endsWith('.jsonl') && statSync(join(arg, name)).isFile())
-        .sort()
-        .map(name => join(arg, name))
+      const sessions = readdirSync(arg).sort().filter(name => statSync(join(arg, name)).isDirectory())
+      return [...jsonlIn(arg), ...sessions.flatMap(name => jsonlIn(join(arg, name, 'subagents')))]
     } catch {
       return [arg]
     }
@@ -49,7 +63,7 @@ export const expandPaths = args =>
 /** Totals over the given transcripts. Exact: usage fields. Estimated: anything derived from characters. */
 export const measure = (files, { gateChars = DEFAULT_GATE_CHARS } = {}) => {
   const t = {
-    sessions: 0, requests: 0, input: 0, cacheRead: 0, cacheCreate: 0, output: 0, thinking: 0,
+    sessions: 0, subagentFiles: 0, requests: 0, input: 0, cacheRead: 0, cacheCreate: 0, output: 0, thinking: 0,
     resultChars: {}, bashCount: 0, bashMaxChars: 0, bashReread: 0,
     gateCount: 0, gateChars: 0, gateReread: 0, allReread: 0,
   }
@@ -58,6 +72,7 @@ export const measure = (files, { gateChars = DEFAULT_GATE_CHARS } = {}) => {
     const rows = parse(file)
     if (!rows) continue
     t.sessions++
+    if (isSubagentFile(file)) t.subagentFiles++
     const toolName = new Map()
     const seen = new Set()
     const results = []
@@ -113,6 +128,7 @@ export const measure = (files, { gateChars = DEFAULT_GATE_CHARS } = {}) => {
 
   return {
     sessions: t.sessions,
+    subagentFiles: t.subagentFiles,
     requests: t.requests,
     exact: {
       input: t.input, cacheRead: t.cacheRead, cacheCreate: t.cacheCreate,
@@ -138,9 +154,14 @@ if (import.meta.url === pathToFileURL(process.argv[1] ?? '').href) {
   const gateChars = i >= 0 ? Number(args.splice(i, 2)[1]) : DEFAULT_GATE_CHARS
   const p = args.indexOf('--project')
   if (p >= 0) args.splice(p, 1, projectDir(process.cwd()))
-  if (!args.length || !Number.isFinite(gateChars) || gateChars <= 0) {
+  if (!args.length || args.some(a => a.startsWith('--')) || !Number.isFinite(gateChars) || gateChars <= 0) {
     console.error('usage: measure.mjs [--gate <chars>] [--project] <transcript.jsonl or project directory…>')
     process.exit(2)
   }
-  console.log(JSON.stringify(measure(expandPaths(args), { gateChars }), null, 2))
+  const files = expandPaths(args)
+  const report = measure(files, { gateChars })
+  const skipped = files.length - report.sessions
+  if (skipped > 0) console.error(`skipped: ${skipped} unreadable path(s)`)
+  console.log(JSON.stringify(report, null, 2))
+  if (files.length > 0 && report.sessions === 0) process.exit(2)
 }
