@@ -1,0 +1,8 @@
+{
+  "name": "m3l-output-governor",
+  "version": "0.1.0",
+  "description": "Measures where Claude Code's output tokens go and guides the levers that lower them: effort and a concise output style.",
+  "author": { "name": "Enrico Lionello" },
+  "license": "MIT",
+  "repository": "https://github.com/monte3l/m3l-output-governor"
+}

@@ -1,0 +1,13 @@
+{
+  "name": "monte3l-output-governor",
+  "description": "Claude Code tools by monte3l that measure and lower output-side token cost.",
+  "owner": { "name": "Enrico Lionello" },
+  "plugins": [
+    {
+      "name": "m3l-output-governor",
+      "description": "Measures where Claude Code's output tokens go and guides the levers that lower them.",
+      "source": "./",
+      "repository": "https://github.com/monte3l/m3l-output-governor"
+    }
+  ]
+}

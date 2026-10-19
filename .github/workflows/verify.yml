@@ -1,0 +1,37 @@
+name: Verify
+
+# What this does: runs this repo's checks on every pull request into `main`
+# and on every push to it. A required check: the org blueprint's `main`
+# ruleset lists `verify`, so keep the job name below.
+#
+# `claude plugin validate --strict .` is not run here yet: it needs Claude Code
+# installed from a pinned `.github/ci-tools/` lockfile, which this repository
+# does not have. Run it locally before a PR.
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  verify:
+    name: verify
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
+        with:
+          node-version-file: .node-version
+
+      - run: node --test "tests/*.test.mjs"
