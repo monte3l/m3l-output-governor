@@ -83,7 +83,7 @@
   "warnings_justification": "CodeQL runs on every push and PR, and CI runs actionlint and zizmor on the workflows. There is no TypeScript or separate JavaScript linter.",
   "warnings_fixed_status": "Met",
   "warnings_fixed_justification": "Findings from these tools fail the required `verify` or CodeQL check, so none is merged unfixed.",
-  "warnings_strict_status": "Met",
+  "warnings_strict_status": "N/A",
   "warnings_strict_justification": "Not applicable: no compiler or linter flag to make strict; CodeQL, actionlint and zizmor fail the build on a finding.",
   "know_secure_design_status": "Met",
   "know_secure_design_justification": "https://github.com/monte3l/m3l-output-governor/blob/main/SECURITY.md states the scope, secrets handling and accepted risks; the maintainers also keep m3l-groundwork's docs/assurance-case.md (https://github.com/monte3l/m3l-groundwork/blob/main/docs/assurance-case.md), which maps the Saltzer and Schroeder principles.",
