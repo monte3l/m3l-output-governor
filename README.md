@@ -1,8 +1,55 @@
 # m3l-output-governor
 
-Measures where Claude Code's output tokens go, so the levers that lower them
-can be chosen from your own sessions instead of guessed. It never changes what
-Claude sees, says or does.
+[![verify](https://github.com/monte3l/m3l-output-governor/actions/workflows/verify.yml/badge.svg?branch=main)](https://github.com/monte3l/m3l-output-governor/actions/workflows/verify.yml)
+[![OpenSSF Scorecard](https://api.securityscorecards.dev/projects/github.com/monte3l/m3l-output-governor/badge)](https://securityscorecards.dev/viewer/?uri=github.com/monte3l/m3l-output-governor)
+[![REUSE status](https://api.reuse.software/badge/github.com/monte3l/m3l-output-governor)](https://api.reuse.software/info/github.com/monte3l/m3l-output-governor)
+
+m3l-output-governor is a Claude Code plugin that measures where Claude Code's
+output tokens go, so the levers that lower them can be chosen from your own
+sessions instead of guessed. It never changes what Claude sees, says or does.
+
+## Who is this for
+
+- Someone who wants to **lower Claude Code's output-token cost** and would
+  rather see their own numbers than follow a rule of thumb.
+- Someone deciding whether to **change the effort level** and wants to know how
+  much of their output is thinking first.
+- Someone weighing the **built-in Concise output style** and wants the measured
+  effect on a real task set, with its limits.
+
+## Quickstart
+
+You need [Claude Code](https://docs.claude.com/en/docs/claude-code/overview)
+(see [Requirements](#requirements) for versions).
+
+1. Install the plugin:
+
+   ```
+   /plugin install m3l-output-governor --marketplace monte3l/m3l-output-governor
+   ```
+
+2. In a project you have used with Claude Code, run
+   `/m3l-output-governor:measure`. Claude reports the numbers for that project's
+   own session transcripts.
+3. Read `thinkingShareOfOutput` against [Levers](#levers) to see which one
+   applies to you. On the author's sessions it was 36%.
+
+To try it from a checkout without installing, run
+`claude --plugin-dir /path/to/m3l-output-governor`.
+
+## How it works
+
+The plugin ships one skill and no hooks, so it changes nothing about how Claude
+Code runs. The skill runs `scripts/measure.mjs --project` on the current
+project's session transcripts, and Claude reports the numbers with the lever
+they support. The script only reads transcripts and prints counts: never prompt
+text, tool output or paths. The skill is user-invoked only, because it reads
+your session history.
+
+Every number is labelled **exact** (read straight from a transcript's `usage`
+fields) or **estimated** (derived from characters, at 4 characters per token).
+See [Measure from the command line](#measure-from-the-command-line) for the full
+field list.
 
 > [!NOTE]
 > An earlier design also shrank tool results with a hook. A baseline over 359
@@ -11,25 +58,7 @@ Claude sees, says or does.
 > main transcript only; counting subagent transcripts too gives 2.4%. The numbers are in
 > [`UNVERIFIED.md`](UNVERIFIED.md).
 
-## Install
-
-```
-/plugin install m3l-output-governor --marketplace monte3l/m3l-output-governor
-```
-
-To try it from a checkout without installing, run
-`claude --plugin-dir /path/to/m3l-output-governor`. The plugin ships one
-skill and no hooks, so it changes nothing about how Claude Code runs.
-
-## Use
-
-Type `/m3l-output-governor:measure` in a project. The skill runs
-`scripts/measure.mjs --project` on that project's own session transcripts and
-Claude reports the numbers below with the lever they support. It only reads
-transcripts, prints counts and never changes a setting. It is user-invoked
-only, because it reads your session history.
-
-## Measure
+## Measure from the command line
 
 ```zsh
 node scripts/measure.mjs ~/.claude/projects/<project>/*.jsonl
@@ -78,9 +107,17 @@ Code docs at code.claude.com.
 | Hook preprocessing of tool data | Returns only matching lines of a large log. A hook's replacement is what is stored and re-read (checked in `UNVERIFIED.md`). Worth it only when large results are a real share of your input; measure first | `costs`, `hooks` |
 
 Check your own share of thinking in output with `measure.mjs` before changing
-effort: on the author's sessions it was 36% (35% with subagent transcripts counted).
+effort.
 
-## Development
+## Requirements
+
+- **Claude Code**, with version 2.1.237 or newer for the Concise output style
+  and 2.1.261 or newer for `bashOutputMaxChars`.
+- **Node 24 or newer**, to run `scripts/measure.mjs` and the evals outside the
+  skill. `.node-version` is the authority. The plugin has no `package.json` and
+  no runtime dependency.
+
+## Working on this repo
 
 ```zsh
 node --test "tests/*.test.mjs"                    # unit tests
@@ -108,6 +145,20 @@ the committed data. Each row holds 19 count and flag fields (task, arm, rep,
 order, seconds, model, style, cost, token counts, requests, turns, tool calls,
 repeated calls, answer length, pass, error).
 
-## Licence
+### Project docs
 
-MIT
+- [`evals/results.md`](evals/results.md) -- the three recorded Concise-style
+  runs and their limits.
+- [`UNVERIFIED.md`](UNVERIFIED.md) -- what was confirmed by a live check, and
+  what is still open.
+- [`SECURITY.md`](SECURITY.md) -- reporting a vulnerability, the accepted CI
+  install-script risk, and the accepted Scorecard findings.
+- [`CHANGELOG.md`](CHANGELOG.md) -- what changed in each release.
+- [`.claude/CLAUDE.md`](.claude/CLAUDE.md) -- the architecture and constraints,
+  written for Claude Code agents.
+- Contributing, the code of conduct and support are the
+  [organization defaults](https://github.com/monte3l/.github).
+
+## License
+
+[MIT](LICENSE).
