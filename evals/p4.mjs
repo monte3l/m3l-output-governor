@@ -1,7 +1,7 @@
 // P4: does built-in Concise cut output tokens, same model and effort, without losing checked answers?
 // A dry run prints the plan and an estimate. `--live` spawns `claude -p` sessions and spends money.
 import { spawnSync } from 'node:child_process'
-import { cpSync, mkdtempSync, mkdirSync, appendFileSync, writeFileSync, readFileSync, globSync, rmSync, readdirSync } from 'node:fs'
+import { copyFileSync, cpSync, existsSync, mkdtempSync, mkdirSync, appendFileSync, writeFileSync, readFileSync, globSync, rmSync, readdirSync } from 'node:fs'
 import { tmpdir, homedir } from 'node:os'
 import { join, dirname } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
@@ -36,7 +36,14 @@ const EXCLUDED = /\/(\.git|evals|\.claude|node_modules|UNVERIFIED\.md|tests\/eva
  */
 export const buildFixture = (root = repoRoot) => {
   const dir = mkdtempSync(join(tmpdir(), 'p4-template-'))
-  cpSync(root, dir, { recursive: true, filter: src => !EXCLUDED.test(src.slice(root.length)) })
+  // Tracked files only, read from the working tree: ignored and untracked files (a local .env, notes) never reach a run.
+  const listed = spawnSync('git', ['ls-files', '-z'], { cwd: root, encoding: 'utf8' })
+  if (listed.status !== 0) throw new Error('buildFixture needs a git checkout: `git ls-files` failed')
+  for (const rel of listed.stdout.split('\0').filter(Boolean)) {
+    if (EXCLUDED.test(`/${rel}`) || !existsSync(join(root, rel))) continue
+    mkdirSync(dirname(join(dir, rel)), { recursive: true })
+    copyFileSync(join(root, rel), join(dir, rel))
+  }
   const file = join(dir, 'scripts/measure.mjs')
   const source = readFileSync(file, 'utf8')
   if (!source.includes('if (r.chars >= gateChars) {')) throw new Error('fixture seed text not found in scripts/measure.mjs')
@@ -56,7 +63,10 @@ export const buildFixture = (root = repoRoot) => {
 
 export const TASKS = [
   { id: 'T1-explain', tools: READ, prompt: 'Explain what the measure function in scripts/measure.mjs does, and how it estimates re-read cost.',
-    check: t => /re-?read/i.test(t) && /(later|subsequent|following|remaining)\s+(assistant |model )?requests?/i.test(t) && /(chars|characters)[^.]{0,40}(\b4\b|four)|(÷|\/|divided by)\s*4/i.test(t) },
+    // Wording-tolerant: "later requests" or "every request after it"; "chars / 4" or "4 characters per token".
+    check: t => /re-?read/i.test(t)
+      && /(later|subsequent|following|remaining|every|each)\s+(assistant |model )?requests?|requests?\s+(after|following|that follow)/i.test(t)
+      && /(chars?|characters)[^.\n]{0,40}(\b4\b|four)|(\b4\b|four)\s+(chars?|characters)|(÷|\/|divid\w*\s+by)\s*4/i.test(t) },
   { id: 'T2-locate', tools: `${READ} Bash(node --test:*)`, prompt: 'One unit test in tests/ fails. Find the cause without changing any files, and name the file and the condition at fault.',
     check: (t, dir, base) => /measure\.mjs/.test(t) && /(>=|at or over|greater than or equal|off-by-one|boundary|strictly|`>`)/i.test(t) && status(dir) === base },
   { id: 'T3-fix', tools: `${READ} Edit Bash(node --test:*)`, prompt: 'One unit test in tests/ fails. Fix the code so all tests pass, and run the tests to confirm.',

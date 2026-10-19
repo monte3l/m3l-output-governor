@@ -16,7 +16,7 @@ rewrites typed prompts.
 
 A tool-result shrinking hook was designed and **rejected**: over 359 real
 sessions, Bash results of 8,000 characters or more carried about 2% of billed input
-(`UNVERIFIED.md`, Closed item 2). Do not rebuild it without rerunning
+(`UNVERIFIED.md`, Closed item 2; re-measured with subagent transcripts in item 18: 2.4%). Do not rebuild it without rerunning
 `scripts/measure.mjs` on a workload that clears 10% at the planned gate.
 
 There is no package.json at the repository root, no build and no runtime dependency (the only
@@ -41,9 +41,9 @@ Scripts are plain Node `.mjs`. The README is the user-facing spec.
 | --- | --- |
 | `scripts/measure.mjs` | `measure(files, { gateChars })` returns exact usage totals (including the thinking split from `usage.output_tokens_details.thinking_tokens`) and estimates derived from characters. The CLI wrapper parses arguments, resolves `--project` from the current directory, expands directories (including each session's `subagents/`), rejects unknown `--` flags with exit 2, and reports a count of unreadable paths on stderr |
 | `tests/measure.test.mjs` | Synthetic transcripts: totals, duplicate message ids, the gate, the counts-only invariant, unreadable files, `expandPaths` (directories and `subagents/`), `projectDir`, and the CLI's flag handling and exit codes |
-| `evals/p4.mjs` | `buildFixture()` makes a scratch copy of this repo with a seeded `>` bug, two commits and an uncommitted diff; `TASKS` holds 8 prompts with objective checks; the runner pairs default and Concise runs, stops at the first error row and resumes past valid ones |
+| `evals/p4.mjs` | `buildFixture()` makes a scratch copy (tracked files only) of this repo with a seeded `>` bug, two commits and an uncommitted diff; `TASKS` holds 8 prompts with objective checks; the runner pairs default and Concise runs, stops at the first error row and resumes past valid ones |
 | `evals/summarize.mjs` | `summarize(rows)` pairs runs by task and rep, drops errored runs, and returns totals, per-task medians and bootstrap intervals (5000 resamples, fixed seed 12345). `pairUp`, `validRows` and `toMarkdown` are exported too |
-| `evals/p4-2026-10-19.jsonl`, `evals/results.md` | The recorded run (counts only, no answer text) and its reading |
+| `evals/p4-2026-10-19.jsonl`, `-run2.jsonl`, `-run3.jsonl`, `evals/results.md` | The three recorded runs (counts only, no answer text) and their reading |
 | `tests/evals.test.mjs` | Dry run spawns nothing, pairing and summary maths, the fixture, the task checks |
 | `skills/measure/SKILL.md` | The plugin's one skill, `/m3l-output-governor:measure`. It injects `measure.mjs --project` output with the `!` shell syntax and has Claude interpret it. User-invoked only |
 | `.claude-plugin/` | Plugin and marketplace manifests. One skill; no hooks, mods or output styles |

@@ -1,7 +1,8 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { spawnSync } from 'node:child_process'
-import { existsSync, rmSync } from 'node:fs'
+import { copyFileSync, existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
@@ -82,4 +83,34 @@ test('each task has an id, a prompt, tools and a check that rejects empty text (
     assert.equal(Boolean(t.check('', '.', '')), false, t.id)
   }
   assert.equal(TASKS.find(t => t.id === 'T8-fact').check('The repository pins Node 24.'), true)
+})
+
+test('the fixture copies tracked files only, so an untracked or ignored file never reaches a run', () => {
+  const root = mkdtempSync(join(tmpdir(), 'p4-root-'))
+  let dir
+  try {
+    mkdirSync(join(root, 'scripts'))
+    copyFileSync(fileURLToPath(new URL('../scripts/measure.mjs', import.meta.url)), join(root, 'scripts/measure.mjs'))
+    writeFileSync(join(root, 'CHANGELOG.md'), '# Changelog\n')
+    writeFileSync(join(root, '.gitignore'), 'ignored.txt\n')
+    spawnSync('git', ['init', '-q'], { cwd: root })
+    spawnSync('git', ['add', '-A'], { cwd: root })
+    writeFileSync(join(root, '.env'), 'SECRET=1\n')
+    writeFileSync(join(root, 'ignored.txt'), 'x\n')
+    dir = buildFixture(root)
+    assert.equal(existsSync(join(dir, 'scripts/measure.mjs')), true)
+    assert.equal(existsSync(join(dir, 'CHANGELOG.md')), true)
+    for (const gone of ['.env', 'ignored.txt']) assert.equal(existsSync(join(dir, gone)), false, gone)
+  } finally {
+    rmSync(root, { recursive: true, force: true })
+    if (dir) rmSync(dir, { recursive: true, force: true })
+  }
+})
+
+test('the T1 check accepts the wordings real answers use and still rejects an unrelated one', () => {
+  const t1 = TASKS.find(t => t.id === 'T1-explain').check
+  assert.equal(t1('A result is re-read on every request after it appears. Tokens are chars / 4.'), true)
+  assert.equal(t1('Re-read cost counts later requests. It uses 4 characters per token.'), true)
+  assert.equal(t1('It sums the usage fields and prints totals.'), false)
+  assert.equal(t1('Re-read cost depends on the result size. Chars / 4 gives tokens.'), false)
 })
