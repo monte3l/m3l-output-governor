@@ -1,0 +1,52 @@
+name: Docs Live Check (Scheduled)
+
+# What this does: once a day, builds the docs site from `main` and compares it
+# with what https://output-governor.monte3l.com actually serves (design/source/docs-kit/
+# check-live.mjs). `docs.yml` runs the same site check right after each
+# deploy; this run catches drift that appears later with no deploy at all, such
+# as a Cloudflare zone setting changed in the dashboard. It never deploys. A
+# failure shows as a failed run, which GitHub emails to the maintainer.
+on:
+  schedule:
+    # 06:30 UTC daily, offset from the security audit's 06:00 run.
+    - cron: "30 6 * * *"
+  workflow_dispatch: {}
+
+permissions: {}
+
+concurrency:
+  group: docs-live
+  cancel-in-progress: false
+
+jobs:
+  check:
+    name: Live site
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      # Always `main`, whatever ref a manual dispatch picked: the live site is
+      # built from `main`, so any other ref would be compared with the wrong
+      # build.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: main
+          persist-credentials: false
+
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
+        with:
+          node-version-file: .node-version
+
+      - run: node design/source/docs-kit/build.mjs --out _site
+
+      # A push to `main` around this hour deploys while this job runs, and
+      # `docs.yml` queues behind its own concurrency group, not this one; six
+      # minutes of retries let that deploy land before a mismatch is reported.
+      - run: node design/source/docs-kit/check-live.mjs --site _site --attempts 12 --delay 30
+
+      # The manifest's description and homepage against the GitHub repository's.
+      # The token only raises the API rate limit; the job holds contents: read.
+      - run: node design/source/docs-kit/check-live.mjs --metadata
+        env:
+          GITHUB_TOKEN: ${{ github.token }}

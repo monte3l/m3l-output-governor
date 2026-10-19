@@ -7,7 +7,8 @@ name: Verify
 # Claude Code is installed from .github/ci-tools/, whose committed lockfile
 # pins it by integrity hash. Its install script runs (it fetches the native
 # binary), so this job holds read-only permissions and no secrets.
-# `claude plugin validate` runs without an API key. The live eval
+# `claude plugin validate` runs without an API key. The docs kit's `--check`
+# needs only Node and git. The live eval
 # (`evals/p4.mjs --live`) needs a key and is deliberately never run in CI.
 on:
   push:
@@ -42,3 +43,8 @@ jobs:
 
       - run: claude plugin validate --strict .
       - run: node --test "tests/*.test.mjs"
+
+      # The docs site gate: links, page coverage, design/SHA256SUMS, the local
+      # CSS rule, and scripts/doc-parity.mjs (README and results against the
+      # code and the committed eval runs). Writes nothing.
+      - run: node design/source/docs-kit/build.mjs --check

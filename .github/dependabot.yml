@@ -26,3 +26,17 @@ updates:
       default-days: 1
     labels:
       - dependencies
+
+  # .github/deploy-tools/ pins the wrangler version docs.yml deploys with. A bump
+  # can change how the site is published, so it arrives as a reviewed PR with a
+  # one-day cooldown.
+  - package-ecosystem: npm
+    directory: /.github/deploy-tools
+    schedule:
+      interval: weekly
+    commit-message:
+      prefix: ci
+    cooldown:
+      default-days: 1
+    labels:
+      - dependencies
