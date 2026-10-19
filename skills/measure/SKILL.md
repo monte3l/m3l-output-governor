@@ -2,7 +2,7 @@
 name: measure
 description: Report where this project's Claude Code tokens went, from its own session transcripts (the share of output that is thinking, how much of billed input large Bash results carry, and which lever the numbers support). Use when the user types /m3l-output-governor:measure or asks where their output-token spend goes.
 disable-model-invocation: true
-allowed-tools: Bash(node *)
+allowed-tools: Bash(node "${CLAUDE_PLUGIN_ROOT}/scripts/measure.mjs" *)
 ---
 
 # Measure output tokens
