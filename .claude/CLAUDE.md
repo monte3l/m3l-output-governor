@@ -29,7 +29,7 @@ Scripts are plain Node `.mjs`. The README is the user-facing spec.
 | --- | --- |
 | `node --test "tests/*.test.mjs"` | Runs the unit tests. Pass a file path to run one. A bare `tests/` directory does not work on Node 24 |
 | `claude plugin validate --strict .` | Checks the plugin and marketplace manifests. CI runs the Claude Code version pinned in `.github/ci-tools/` (`npm ci --prefix .github/ci-tools`, then put its `node_modules/.bin` first on `PATH`) |
-| `node scripts/measure.mjs [--gate <chars>] <transcript.jsonl…>` | Token baseline from session transcripts. Prints counts only |
+| `node scripts/measure.mjs [--gate <chars>] [--project] <transcript.jsonl or directory…>` | Token baseline from session transcripts. `--project` means the current directory's transcript folder. Prints counts only |
 | `node evals/summarize.mjs <results.jsonl>` | Prints the P4 table from result rows. Free, deterministic (seeded bootstrap) |
 | `node evals/p4.mjs [--live]` | Default versus Concise on `claude-opus-5-5` at `medium`. **Without `--live` it is a dry run** that prints the plan and a cost estimate. `--live` spawns `claude -p` sessions and spends about $5 |
 | `.github/bin/apply-repo-baseline.sh monte3l/m3l-output-governor` | Run from the `.github` repo checkout, read-only: compares this repository with the org baseline |
@@ -44,7 +44,8 @@ Scripts are plain Node `.mjs`. The README is the user-facing spec.
 | `evals/summarize.mjs` | `summarize(rows)` pairs runs by task and rep, drops errored runs, and returns totals, per-task medians and bootstrap intervals |
 | `evals/p4-2026-10-19.jsonl`, `evals/results.md` | The recorded run (counts only, no answer text) and its reading |
 | `tests/evals.test.mjs` | Dry run spawns nothing, pairing and summary maths, the fixture, the task checks |
-| `.claude-plugin/` | Plugin and marketplace manifests. No hooks, mods or output styles yet |
+| `skills/measure/SKILL.md` | The plugin's one skill, `/m3l-output-governor:measure`. It injects `measure.mjs --project` output with the `!` shell syntax and has Claude interpret it. User-invoked only |
+| `.claude-plugin/` | Plugin and marketplace manifests. One skill; no hooks, mods or output styles |
 | `.github/ci-tools/` | `package.json` and lockfile pinning `@anthropic-ai/claude-code`; `verify.yml` installs it with its install script (an accepted risk, see `SECURITY.md`). Dependabot proposes bumps after a one-day cooldown |
 | `design/README.md` | The m3l-design marker, content tier |
 
@@ -65,6 +66,9 @@ Constraints that are not obvious from one file:
 - **A nested `node --test` inherits `NODE_TEST_CONTEXT` and then reports success.** Strip it from
   the child environment when a test or the runner spawns `node --test` (see `testsPass` in
   `evals/p4.mjs` and `tests/evals.test.mjs`).
+- **Keep `disable-model-invocation: true` on the measure skill.** It reads the user's session
+  history, so only the user may trigger it. Its `allowed-tools` pre-approves the injected
+  `node` command; the skill report must stay counts only.
 - **Claims about Claude Code behaviour cite a code.claude.com page** or are marked
   unconfirmed in `UNVERIFIED.md`.
 - **No LLM rewriting of assistant prose, no `MessageDisplay` for savings, no
