@@ -10,9 +10,10 @@ export default {
   siteUrl: "https://output-governor.monte3l.com",
   designDir: "design",
   manifest: ".claude-plugin/plugin.json", // its homepage must equal siteUrl
-  navGroups: ["Start", "Evidence", "Project", "Security"],
+  navGroups: ["Start", "Reference", "Evidence", "Project", "Security"],
   pages: [
     { src: "README.md", out: "index.html", group: "Start", label: "Overview" },
+    { src: "skills/measure/SKILL.md", out: "skill.html", group: "Reference", label: "Measure skill prompt" },
     { src: "evals/results.md", out: "results.html", group: "Evidence", label: "Evaluation results" },
     { src: "UNVERIFIED.md", out: "UNVERIFIED.html", group: "Evidence", label: "Open items" },
     { src: "CONTRIBUTING.md", out: "CONTRIBUTING.html", group: "Project", label: "Contributing" },
@@ -22,7 +23,6 @@ export default {
   exclude: [
     { glob: "CHANGELOG.md", reason: "release notes live on the GitHub releases page" },
     { glob: ".claude/**", reason: "instructions for coding agents, not reader-facing" },
-    { glob: "skills/measure/SKILL.md", reason: "a skill prompt, not prose: its YAML frontmatter would render as a rule and a paragraph (the kit does not strip it), and its numbers are checked by scripts/doc-parity.mjs instead" },
     { glob: ".github/pull_request_template.md", reason: "GitHub pull request form, not reader-facing" },
     { glob: "design/source/**", reason: "vendored m3l-design release, never edited here; the kit and brand book are documented upstream" },
   ],

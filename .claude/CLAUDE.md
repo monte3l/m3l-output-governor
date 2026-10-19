@@ -97,8 +97,8 @@ Constraints that are not obvious from one file:
   **Fix the source page, never the kit** (a kit bug goes to `m3l-design`). The
   kit renders h1 to h3, tables, fenced code, lists, blockquotes and alerts,
   footnotes and images, with no raw HTML and no italics.
-- `skills/measure/SKILL.md` is excluded from the site on purpose: its YAML
-  frontmatter would render as page text. `scripts/doc-parity.mjs` still reads it.
+- `skills/measure/SKILL.md` is a site page ("Measure skill prompt"). The kit drops its
+  YAML frontmatter, and `scripts/doc-parity.mjs` still reads the file itself.
 - When you change a flag, a default, an output field or a quoted number, update
   the README (or `evals/results.md`) in the same commit. `doc-parity.mjs` names
   what drifted. A quoted number that comes from the committed runs belongs in
