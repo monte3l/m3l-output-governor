@@ -31,8 +31,9 @@ Report a suspected security vulnerability privately. See
 ## Pull requests
 
 1. Branch off `main` as `feat/<slug>` or `fix/<slug>`.
-2. Run the checks before pushing: `node --test "tests/*.test.mjs"` and
-   `claude plugin validate --strict .`.
+2. Run the checks before pushing: `node --test "tests/*.test.mjs"`,
+   `claude plugin validate --strict .` and
+   `node design/source/docs-kit/build.mjs --check`.
 3. Add tests for new behavior and a regression test for a fix. A change to
    `scripts/measure.mjs` output also updates the README tables.
 4. Resolve every review thread. A pull request merges when its required checks
@@ -40,6 +41,12 @@ Report a suspected security vulnerability privately. See
 
 Markdown here follows m3l-design: bold, never italics, and tables for tabular
 data.
+
+The documentation site is built from the Markdown in this repository. A change
+to a flag, a default, an output field or a measured number also updates the
+README or `evals/results.md`: the docs check compares them with the code and the
+committed runs, and fails with the name of what drifted. Fix the page, never
+the kit.
 
 ## Conduct
 

@@ -20,7 +20,8 @@ sessions, Bash results of 8,000 characters or more carried about 2% of billed in
 `scripts/measure.mjs` on a workload that clears 10% at the planned gate.
 
 There is no package.json at the repository root, no build and no runtime dependency (the only
-`package.json` is in `.github/ci-tools/`, which pins the Claude Code that CI uses).
+`package.json` files are in `.github/ci-tools/`, which pins the Claude Code that CI uses, and
+`.github/deploy-tools/`, which pins the wrangler that deploys the docs site).
 Scripts are plain Node `.mjs`. The README is the user-facing spec.
 `UNVERIFIED.md` records what was confirmed by a live check and what is open.
 
@@ -30,6 +31,9 @@ Scripts are plain Node `.mjs`. The README is the user-facing spec.
 | --- | --- |
 | `node --test "tests/*.test.mjs"` | Runs the unit tests. Pass a file path to run one. A bare `tests/` directory does not work on Node 24 |
 | `claude plugin validate --strict .` | Checks the plugin and marketplace manifests. CI runs the Claude Code version pinned in `.github/ci-tools/` (`npm ci --prefix .github/ci-tools`, then put its `node_modules/.bin` first on `PATH`) |
+| `node design/source/docs-kit/build.mjs --check` | The docs site gate (writes nothing): links, every tracked `*.md` is a page or excluded with a reason, `design/SHA256SUMS`, the `design/local/` CSS rule, and `scripts/doc-parity.mjs`. CI runs it in `verify.yml` |
+| `node design/source/docs-kit/build.mjs --out _site` | Builds the site locally. `_site/` is gitignored |
+| `node scripts/doc-parity.mjs` | Only the doc-versus-code parity checks. Prints `ok` or each drift, exit 1 on drift |
 | `node scripts/measure.mjs [--gate <chars>] [--project] <transcript.jsonl or directory…>` | Token baseline from session transcripts. `--project` means the current directory's transcript folder. Prints counts only |
 | `node evals/summarize.mjs <results.jsonl>` | Prints the P4 table from result rows. Free, deterministic (seeded bootstrap) |
 | `node evals/p4.mjs [--live]` | Default versus Concise on `claude-opus-5-5` at `medium`. **Without `--live` it is a dry run** that prints the plan and a cost estimate. `--live` spawns `claude -p` sessions and spends about $5 |
@@ -48,7 +52,10 @@ Scripts are plain Node `.mjs`. The README is the user-facing spec.
 | `skills/measure/SKILL.md` | The plugin's one skill, `/m3l-output-governor:measure`. It injects `measure.mjs --project` output with the `!` shell syntax and has Claude interpret it. User-invoked only |
 | `.claude-plugin/` | Plugin and marketplace manifests. One skill; no hooks, mods or output styles |
 | `.github/ci-tools/` | `package.json` and lockfile pinning `@anthropic-ai/claude-code`; `verify.yml` installs it with its install script (an accepted risk, see `SECURITY.md`). Dependabot proposes bumps after a one-day cooldown |
-| `design/README.md` | The m3l-design marker, content tier |
+| `scripts/doc-parity.mjs` | A kit parity module (listed in `docs.config.mjs` `parity`). Compares the README with `measure.mjs` flags, the gate default and the JSON field paths (flattened from `measure()` run on a synthetic transcript), with `p4.mjs` flags, defaults, task count, per-run caps and the dry-run plan, and with the result-row key count. It recomputes the committed `evals/p4-2026-10-19*.jsonl` runs through `summarize.mjs` and asserts every figure in `NUMBER_TABLE` (README Levers, `evals/results.md`, `UNVERIFIED.md` items 14, 17 and 19). It also checks the skill invocation and `disable-model-invocation`. `tests/doc-parity.test.mjs` covers its pure helpers |
+| `docs.config.mjs` | The docs site config: pages, nav groups, `exclude` (each with a reason), the manifest, and the parity module |
+| `.github/deploy-tools/`, `.github/workflows/docs.yml`, `docs-live.yml` | Cloudflare Workers Static Assets deploy (Worker `m3l-output-governor-docs`, `output-governor.monte3l.com`), the post-deploy smoke test and the daily live check with `--metadata` |
+| `design/README.md` | The m3l-design marker, vendored tier. `design/source/`, `tokens.css` and `SHA256SUMS` are the verbatim copy |
 
 Constraints that are not obvious from one file:
 
@@ -79,11 +86,28 @@ Constraints that are not obvious from one file:
 
 ## Docs and style
 
-- The repository follows **m3l-design** at the content tier (see
-  `design/README.md`). Adding CSS, a docs site or coloured terminal output moves it
-  to the vendored tier first: `bin/sync-design.sh vX.Y.Z <repo>` from an
-  `m3l-design` checkout, never a hand edit of `design/source/`, never a live
-  `@monte3l/m3l-design` dependency.
+- The repository follows **m3l-design** at the **vendored tier** (see
+  `design/README.md`; `Version copied`). `design/source/`, `design/tokens.css`
+  and `design/SHA256SUMS` are a verbatim copy: never hand-edit them. Move to a
+  newer release with `bin/sync-design.sh vX.Y.Z <repo>` from an `m3l-design`
+  checkout, and never add a live `@monte3l/m3l-design` dependency.
+- **The docs site** (`output-governor.monte3l.com`) is built by the vendored kit
+  from `docs.config.mjs`. A page is on the site only if it is in `pages`; every
+  other tracked `*.md` must be in `exclude` with a reason, or `--check` fails.
+  **Fix the source page, never the kit** (a kit bug goes to `m3l-design`). The
+  kit renders h1 to h3, tables, fenced code, lists, blockquotes and alerts,
+  footnotes and images, with no raw HTML and no italics.
+- `skills/measure/SKILL.md` is excluded from the site on purpose: its YAML
+  frontmatter would render as page text. `scripts/doc-parity.mjs` still reads it.
+- When you change a flag, a default, an output field or a quoted number, update
+  the README (or `evals/results.md`) in the same commit. `doc-parity.mjs` names
+  what drifted. A quoted number that comes from the committed runs belongs in
+  `NUMBER_TABLE`; one that does not (the author's 36% thinking share, the 2% and
+  2.4% baselines, the 359 sessions, post hoc re-scoring) cannot be derived and
+  stays hand-kept.
+- `tests/doc-parity.test.mjs`, `scripts/doc-parity.mjs`, `docs.config.mjs` and
+  `design/source` are left out of the P4 fixture (`EXCLUDED` in `evals/p4.mjs`),
+  so a docs-site file never changes what a live run sees.
 - Bold, never italics or underlines; a GitHub alert matched to severity, at most
   two in a row, `[!CAUTION]` only for data loss or anything irreversible; plain
   direct sentences; tables for tabular data.
