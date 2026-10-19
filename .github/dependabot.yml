@@ -12,3 +12,17 @@ updates:
       default-days: 7
     labels:
       - dependencies
+
+  # .github/ci-tools/ pins the Claude Code version verify.yml installs. A bump
+  # can change how the plugin is validated, so it arrives as a reviewed PR with
+  # a one-day cooldown.
+  - package-ecosystem: npm
+    directory: /.github/ci-tools
+    schedule:
+      interval: weekly
+    commit-message:
+      prefix: ci
+    cooldown:
+      default-days: 1
+    labels:
+      - dependencies

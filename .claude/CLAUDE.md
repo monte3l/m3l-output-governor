@@ -28,7 +28,7 @@ Scripts are plain Node `.mjs`. The README is the user-facing spec.
 | Command | What it does |
 | --- | --- |
 | `node --test "tests/*.test.mjs"` | Runs the unit tests. Pass a file path to run one. A bare `tests/` directory does not work on Node 24 |
-| `claude plugin validate --strict .` | Checks the plugin and marketplace manifests |
+| `claude plugin validate --strict .` | Checks the plugin and marketplace manifests. CI runs the Claude Code version pinned in `.github/ci-tools/` (`npm ci --prefix .github/ci-tools`, then put its `node_modules/.bin` first on `PATH`) |
 | `node scripts/measure.mjs [--gate <chars>] <transcript.jsonl…>` | Token baseline from session transcripts. Prints counts only |
 | `node evals/summarize.mjs <results.jsonl>` | Prints the P4 table from result rows. Free, deterministic (seeded bootstrap) |
 | `node evals/p4.mjs [--live]` | Default versus Concise on `claude-opus-5-5` at `medium`. **Without `--live` it is a dry run** that prints the plan and a cost estimate. `--live` spawns `claude -p` sessions and spends about $5 |
@@ -45,6 +45,7 @@ Scripts are plain Node `.mjs`. The README is the user-facing spec.
 | `evals/p4-2026-10-19.jsonl`, `evals/results.md` | The recorded run (counts only, no answer text) and its reading |
 | `tests/evals.test.mjs` | Dry run spawns nothing, pairing and summary maths, the fixture, the task checks |
 | `.claude-plugin/` | Plugin and marketplace manifests. No hooks, mods or output styles yet |
+| `.github/ci-tools/` | `package.json` and lockfile pinning `@anthropic-ai/claude-code`; `verify.yml` installs it with its install script (an accepted risk, see `SECURITY.md`). Dependabot proposes bumps after a one-day cooldown |
 | `design/README.md` | The m3l-design marker, content tier |
 
 Constraints that are not obvious from one file:

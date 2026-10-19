@@ -6,10 +6,10 @@ name: Workflow lint
 # Nothing here needs a secret; zizmor runs its offline audits only.
 on:
   push:
-    branches: [$default-branch]
+    branches: [main]
     paths: [".github/workflows/**"]
   pull_request:
-    branches: [$default-branch]
+    branches: [main]
     paths: [".github/workflows/**"]
 
 permissions:
