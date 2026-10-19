@@ -9,9 +9,9 @@ name: Gitleaks
 # organization secret scoped to the repositories that use this workflow.
 on:
   push:
-    branches: [$default-branch]
+    branches: [main]
   pull_request:
-    branches: [$default-branch]
+    branches: [main]
   schedule:
     - cron: "0 5 * * 1" # every Monday, full-history scan
   workflow_dispatch:
