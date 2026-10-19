@@ -30,7 +30,17 @@ jobs:
           # Permissive licenses only. Add a license here only after checking
           # that this project can accept its terms.
           allow-licenses: MIT, MIT-0, Apache-2.0, BSD-2-Clause, BSD-3-Clause, ISC, 0BSD, CC0-1.0, Unlicense, CC-BY-4.0, BlueOak-1.0.0, Artistic-2.0, CC-BY-3.0
-          # A copyleft or platform-specific package that is acceptable for a
-          # tool the project only runs (never ships) is exempted by package
-          # URL, not by adding its license above. Example:
-          # allow-dependencies-licenses: pkg:npm/%40img/sharp-libvips-linux-x64
+          # Per-package, not per-license: the pinned Claude Code CLI in
+          # .github/ci-tools (verify.yml) and its platform binaries carry
+          # Anthropic's proprietary licence ("SEE LICENSE IN ..."). They are
+          # only installed in a CI job and never redistributed.
+          allow-dependencies-licenses: >-
+            pkg:npm/%40anthropic-ai/claude-code,
+            pkg:npm/%40anthropic-ai/claude-code-darwin-arm64,
+            pkg:npm/%40anthropic-ai/claude-code-darwin-x64,
+            pkg:npm/%40anthropic-ai/claude-code-linux-arm64,
+            pkg:npm/%40anthropic-ai/claude-code-linux-arm64-musl,
+            pkg:npm/%40anthropic-ai/claude-code-linux-x64,
+            pkg:npm/%40anthropic-ai/claude-code-linux-x64-musl,
+            pkg:npm/%40anthropic-ai/claude-code-win32-arm64,
+            pkg:npm/%40anthropic-ai/claude-code-win32-x64
