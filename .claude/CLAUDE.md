@@ -68,9 +68,9 @@ Constraints that are not obvious from one file:
   the child environment when a test or the runner spawns `node --test` (see `testsPass` in
   `evals/p4.mjs` and `tests/evals.test.mjs`).
 - **Keep `disable-model-invocation: true` on the measure skill.** It reads the user's session
-  history, so only the user may trigger it. Its `allowed-tools` is `Bash(node *)`, which
-  pre-approves any `node` command while the skill runs, not only the injected one
-  (narrowing it to the script path was not verified); the skill report must stay counts only.
+  history, so only the user may trigger it. Its `allowed-tools` pre-approves only
+  `node "${CLAUDE_PLUGIN_ROOT}/scripts/measure.mjs" *` (checked headless: that rule runs the
+  injection, a non-matching one stops it with 0 turns); the skill report must stay counts only.
 - **Claims about Claude Code behaviour cite a code.claude.com page** or are marked
   unconfirmed in `UNVERIFIED.md`.
 - **No LLM rewriting of assistant prose, no `MessageDisplay` for savings, no
