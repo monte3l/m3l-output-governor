@@ -49,7 +49,7 @@ effort: on the author's sessions it was 36%.
 
 ```zsh
 node --test "tests/*.test.mjs"                    # unit tests
-claude plugin validate --strict .                 # manifest
+claude plugin validate --strict .                 # manifest (CI uses the version pinned in .github/ci-tools)
 node evals/summarize.mjs evals/p4-2026-10-19.jsonl   # reproduce the P4 table, free
 node evals/p4.mjs                                 # dry run: prints the plan and a cost estimate
 node evals/p4.mjs --live                          # spends about $5 on the credential claude resolves

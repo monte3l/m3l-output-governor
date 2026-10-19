@@ -4,3 +4,4 @@ node_modules/
 .DS_Store
 tmp/
 evals/.results/
+.github/ci-tools/node_modules/
