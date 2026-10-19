@@ -1,0 +1,14 @@
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    commit-message:
+      prefix: ci
+    # A freshly published action version is the window an attacker needs;
+    # the default cooldown of 0 leaves it open.
+    cooldown:
+      default-days: 7
+    labels:
+      - dependencies

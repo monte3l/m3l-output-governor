@@ -1,0 +1,50 @@
+name: Gitleaks
+
+# Scans for secrets (API keys, tokens, private keys) with gitleaks-action.
+# A push scans the pushed commits, a pull request scans its commits, and the
+# weekly schedule and manual dispatch scan the full history.
+#
+# gitleaks-action needs a free GITLEAKS_LICENSE secret for an
+# organization-owned repository (see the action's README). Add it as an
+# organization secret scoped to the repositories that use this workflow.
+on:
+  push:
+    branches: [$default-branch]
+  pull_request:
+    branches: [$default-branch]
+  schedule:
+    - cron: "0 5 * * 1" # every Monday, full-history scan
+  workflow_dispatch:
+
+permissions: {}
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  scan:
+    name: Gitleaks
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      pull-requests: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+          fetch-depth: 0 # gitleaks needs full history to compute the commit range it scans
+
+      - uses: gitleaks/gitleaks-action@e0c47f4f8be36e29cdc102c57e68cb5cbf0e8d1e # v3.0.0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITLEAKS_LICENSE: ${{ secrets.GITLEAKS_LICENSE }}
+          # Pinned above the action's own stale built-in default. Dependabot
+          # does not track this value, so bump it by hand periodically.
+          GITLEAKS_VERSION: "8.30.1"
+          # Avoids needing pull-requests: write for a PR comment.
+          GITLEAKS_ENABLE_COMMENTS: "false"
+          # The repository's own config (blueprint/files/gitleaks.toml): the
+          # default rules plus any allowlist for fake keys in tests.
+          GITLEAKS_CONFIG: .gitleaks.toml

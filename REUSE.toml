@@ -1,0 +1,10 @@
+version = 1
+SPDX-PackageName = "m3l-output-governor"
+SPDX-PackageSupplier = "monte3l"
+SPDX-PackageDownloadLocation = "https://github.com/monte3l/m3l-output-governor"
+
+[[annotations]]
+path = ["**"]
+precedence = "aggregate"
+SPDX-FileCopyrightText = "Copyright (c) 2026 Enrico Lionello (enri3l) and Giulia Montevecchi (giulmonte), monte3l"
+SPDX-License-Identifier = "MIT"
