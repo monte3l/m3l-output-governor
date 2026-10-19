@@ -2,6 +2,7 @@
 
 [![verify](https://github.com/monte3l/m3l-output-governor/actions/workflows/verify.yml/badge.svg?branch=main)](https://github.com/monte3l/m3l-output-governor/actions/workflows/verify.yml)
 [![OpenSSF Scorecard](https://api.securityscorecards.dev/projects/github.com/monte3l/m3l-output-governor/badge)](https://securityscorecards.dev/viewer/?uri=github.com/monte3l/m3l-output-governor)
+[![OpenSSF Best Practices](https://www.bestpractices.dev/projects/15707/badge)](https://www.bestpractices.dev/projects/15707)
 [![REUSE status](https://api.reuse.software/badge/github.com/monte3l/m3l-output-governor)](https://api.reuse.software/info/github.com/monte3l/m3l-output-governor)
 
 m3l-output-governor is a Claude Code plugin that measures where Claude Code's
