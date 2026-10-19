@@ -72,7 +72,7 @@ Code docs at code.claude.com.
 | Lever | What it does | Source |
 | --- | --- | --- |
 | Effort level | Thinking is billed as output tokens, and on adaptive models effort is the control for it | `costs` |
-| Concise output style | Leads with the result and drops lead-in, step-by-step narration and the closing recap. Needs Claude Code 2.1.237 or newer. Measured here on Opus 5.5 at `medium` over 24 paired runs: output tokens fell 17% in total with no loss of checked answers (a repeat run on a corrected fixture gave 15%), 16 to 42% on explanations, reviews, plans, git questions and locating code (32%) and about 0% on fixes, a manifest lookup and one-line facts. Cost per run fell only 3%, because the fixed prompt prefix dominates | `output-styles`, `UNVERIFIED.md` |
+| Concise output style | Leads with the result and drops lead-in, step-by-step narration and the closing recap. Needs Claude Code 2.1.237 or newer. Measured here on Opus 5.5 at `medium` over 24 paired runs: output tokens fell 17% in total with no loss of checked answers (two repeat runs on a corrected fixture gave 15% and 13%), 16 to 42% on explanations, reviews, plans, git questions and locating code (32%) and about 0% on fixes, a manifest lookup and one-line facts. Cost per run fell only 3%, because the fixed prompt prefix dominates | `output-styles`, `UNVERIFIED.md` |
 | Subagents for verbose work | Keeps test and log output in the subagent's context and returns a summary. The subagent's own requests still draw on your usage | `sub-agents`, `costs` |
 | `bashOutputMaxChars` setting | Sets how many characters of a successful Bash command's output Claude receives inline (default 30,000, clamped to 4,000 to 128,000, v2.1.261 or newer). Past the limit Claude gets a file path and a short preview. A built-in way to cap large results with no hook | `settings-reference` |
 | Hook preprocessing of tool data | Returns only matching lines of a large log. A hook's replacement is what is stored and re-read (checked in `UNVERIFIED.md`). Worth it only when large results are a real share of your input; measure first | `costs`, `hooks` |
@@ -85,7 +85,7 @@ effort: on the author's sessions it was 36% (35% with subagent transcripts count
 ```zsh
 node --test "tests/*.test.mjs"                    # unit tests
 claude plugin validate --strict .                 # manifest (CI uses the version pinned in .github/ci-tools)
-node evals/summarize.mjs evals/p4-2026-10-19.jsonl   # reproduce the P4 table, free (also p4-2026-10-19-run2.jsonl)
+node evals/summarize.mjs evals/p4-2026-10-19.jsonl   # reproduce the P4 table, free (also the -run2 and -run3 files)
 node evals/p4.mjs                                 # dry run: prints the plan and a cost estimate
 node evals/p4.mjs --live                          # spends about $5 on the credential claude resolves
 ```

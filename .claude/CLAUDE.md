@@ -43,7 +43,7 @@ Scripts are plain Node `.mjs`. The README is the user-facing spec.
 | `tests/measure.test.mjs` | Synthetic transcripts: totals, duplicate message ids, the gate, the counts-only invariant, unreadable files, `expandPaths` (directories and `subagents/`), `projectDir`, and the CLI's flag handling and exit codes |
 | `evals/p4.mjs` | `buildFixture()` makes a scratch copy (tracked files only) of this repo with a seeded `>` bug, two commits and an uncommitted diff; `TASKS` holds 8 prompts with objective checks; the runner pairs default and Concise runs, stops at the first error row and resumes past valid ones |
 | `evals/summarize.mjs` | `summarize(rows)` pairs runs by task and rep, drops errored runs, and returns totals, per-task medians and bootstrap intervals (5000 resamples, fixed seed 12345). `pairUp`, `validRows` and `toMarkdown` are exported too |
-| `evals/p4-2026-10-19.jsonl`, `evals/p4-2026-10-19-run2.jsonl`, `evals/results.md` | The two recorded runs (counts only, no answer text) and their reading |
+| `evals/p4-2026-10-19.jsonl`, `-run2.jsonl`, `-run3.jsonl`, `evals/results.md` | The three recorded runs (counts only, no answer text) and their reading |
 | `tests/evals.test.mjs` | Dry run spawns nothing, pairing and summary maths, the fixture, the task checks |
 | `skills/measure/SKILL.md` | The plugin's one skill, `/m3l-output-governor:measure`. It injects `measure.mjs --project` output with the `!` shell syntax and has Claude interpret it. User-invoked only |
 | `.claude-plugin/` | Plugin and marketplace manifests. One skill; no hooks, mods or output styles |
