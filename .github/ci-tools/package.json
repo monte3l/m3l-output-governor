@@ -1,0 +1,9 @@
+{
+  "name": "m3l-output-governor-ci-tools",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Pins the exact Claude Code version verify.yml installs, so the pin is verified by a committed lockfile's integrity hash rather than a bare version string in YAML.",
+  "dependencies": {
+    "@anthropic-ai/claude-code": "2.1.303"
+  }
+}
