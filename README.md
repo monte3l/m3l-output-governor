@@ -127,6 +127,10 @@ node evals/p4.mjs                                 # dry run: prints the plan and
 node evals/p4.mjs --live                          # spends about $5 on the credential claude resolves
 ```
 
+Commits are Conventional Commits, signed, with a `Signed-off-by` trailer
+(`git commit -s`). The `DCO sign-off` check fails a pull request that has a
+commit without one.
+
 The live eval compares built-in Concise with the default style on Opus 5.5.
 Results and limits are in [`evals/results.md`](evals/results.md).
 
