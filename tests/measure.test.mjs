@@ -1,10 +1,10 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { mkdtempSync, writeFileSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
-import { measure } from '../scripts/measure.mjs'
+import { expandPaths, measure, projectDir } from '../scripts/measure.mjs'
 
 const SECRET = 'sk-ant-SECRET-PROMPT-TEXT'
 
@@ -66,4 +66,20 @@ test('skips unreadable files and malformed lines', () => {
   const m = measure(['/nonexistent/x.jsonl', transcript([assistant('a', usage(5, 0), [])])])
   assert.equal(m.sessions, 1)
   assert.equal(m.exact.output, 5)
+})
+
+test('a directory argument expands to its .jsonl files, sorted, and other arguments pass through', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'm3l-og-dir-'))
+  writeFileSync(join(dir, 'b.jsonl'), '')
+  writeFileSync(join(dir, 'a.jsonl'), '')
+  writeFileSync(join(dir, 'notes.txt'), '')
+  mkdirSync(join(dir, 'sub.jsonl'))
+  assert.deepEqual(expandPaths([dir]).map(p => p.slice(dir.length + 1)), ['a.jsonl', 'b.jsonl'])
+  assert.deepEqual(expandPaths(['/nonexistent/x.jsonl']), ['/nonexistent/x.jsonl'])
+  assert.deepEqual(expandPaths([join(dir, 'a.jsonl')]), [join(dir, 'a.jsonl')])
+})
+
+test('projectDir maps a working directory to its transcript folder', () => {
+  assert.equal(projectDir('/Users/me/workspaces/monte3l/m3l-output-governor', '/home'), '/home/.claude/projects/-Users-me-workspaces-monte3l-m3l-output-governor')
+  assert.equal(projectDir('/Users/me/.claude/x y', '/home'), '/home/.claude/projects/-Users-me--claude-x-y')
 })

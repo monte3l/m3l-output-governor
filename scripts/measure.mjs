@@ -1,6 +1,8 @@
 // Offline token baseline from Claude Code session transcripts.
 // Reads local JSONL files and prints counts only, never prompt text, tool output or paths.
-import { readFileSync } from 'node:fs'
+import { readFileSync, readdirSync, statSync } from 'node:fs'
+import { homedir } from 'node:os'
+import { join } from 'node:path'
 import { pathToFileURL } from 'node:url'
 
 const DEFAULT_GATE_CHARS = 8000
@@ -26,6 +28,23 @@ const parse = file => {
     return null
   }
 }
+
+/** Where Claude Code keeps a project's transcripts: the working directory with every non-alphanumeric character as `-`. */
+export const projectDir = (cwd, home = homedir()) => join(home, '.claude', 'projects', cwd.replace(/[^A-Za-z0-9]/g, '-'))
+
+/** A directory argument stands for the `.jsonl` transcripts directly inside it; a file argument stands for itself. */
+export const expandPaths = args =>
+  args.flatMap(arg => {
+    try {
+      if (!statSync(arg).isDirectory()) return [arg]
+      return readdirSync(arg)
+        .filter(name => name.endsWith('.jsonl') && statSync(join(arg, name)).isFile())
+        .sort()
+        .map(name => join(arg, name))
+    } catch {
+      return [arg]
+    }
+  })
 
 /** Totals over the given transcripts. Exact: usage fields. Estimated: anything derived from characters. */
 export const measure = (files, { gateChars = DEFAULT_GATE_CHARS } = {}) => {
@@ -117,9 +136,11 @@ if (import.meta.url === pathToFileURL(process.argv[1] ?? '').href) {
   const args = process.argv.slice(2)
   const i = args.indexOf('--gate')
   const gateChars = i >= 0 ? Number(args.splice(i, 2)[1]) : DEFAULT_GATE_CHARS
+  const p = args.indexOf('--project')
+  if (p >= 0) args.splice(p, 1, projectDir(process.cwd()))
   if (!args.length || !Number.isFinite(gateChars) || gateChars <= 0) {
-    console.error('usage: measure.mjs [--gate <chars>] <transcript.jsonl…>')
+    console.error('usage: measure.mjs [--gate <chars>] [--project] <transcript.jsonl or project directory…>')
     process.exit(2)
   }
-  console.log(JSON.stringify(measure(args, { gateChars }), null, 2))
+  console.log(JSON.stringify(measure(expandPaths(args), { gateChars }), null, 2))
 }

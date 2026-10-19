@@ -10,14 +10,33 @@ Claude sees, says or does.
 > billed input, so that layer was dropped. The numbers are in
 > [`UNVERIFIED.md`](UNVERIFIED.md).
 
+## Install
+
+```
+/plugin install m3l-output-governor --marketplace monte3l/m3l-output-governor
+```
+
+To try it from a checkout without installing, run
+`claude --plugin-dir /path/to/m3l-output-governor`. The plugin ships one
+skill and no hooks, so it changes nothing about how Claude Code runs.
+
+## Use
+
+Type `/m3l-output-governor:measure` in a project. The skill runs
+`scripts/measure.mjs --project` on that project's own session transcripts and
+Claude reports the numbers below with the lever they support. It only reads
+transcripts, prints counts and never changes a setting. It is user-invoked
+only, because it reads your session history.
+
 ## Measure
 
 ```zsh
 node scripts/measure.mjs ~/.claude/projects/<project>/*.jsonl
 node scripts/measure.mjs --gate 4000 ~/.claude/projects/*/*.jsonl
+node scripts/measure.mjs --project           # this directory's transcripts
 ```
 
-The script reads local session transcripts and prints counts only. It never
+The script reads local session transcripts (a file, or a project directory of them) and prints counts only. It never
 prints prompt text, tool output or paths.
 
 | Field | Source | Exact or estimated |
