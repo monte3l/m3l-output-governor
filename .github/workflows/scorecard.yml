@@ -1,0 +1,45 @@
+name: Scorecard
+
+# Runs OpenSSF Scorecard, which scores a repository's supply-chain practices
+# (branch protection, pinned dependencies, signed releases, and similar), and
+# publishes the result that powers the Scorecard badge. Weekly, on every push
+# to the default branch, and on manual dispatch. Read-only: it inspects the
+# repository and uploads a report, it never writes to it.
+#
+# publish_results needs a public repository. Set it to false for a private one.
+on:
+  push:
+    branches: [main]
+  schedule:
+    - cron: "30 4 * * 1" # every Monday
+  workflow_dispatch:
+
+permissions: read-all
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  analysis:
+    name: Scorecard analysis
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      # Required by ossf/scorecard-action's own documented minimum.
+      security-events: write # to upload SARIF results
+      id-token: write # to publish results and get a badge
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+
+      - uses: ossf/scorecard-action@2d1146689b8cda280b9bc96326124645441f03bc # v2.4.4
+        with:
+          results_file: results.sarif
+          results_format: sarif
+          publish_results: true
+
+      - uses: github/codeql-action/upload-sarif@24c54180a607b1449ed407dd24f251e4e9147c8d # v4
+        with:
+          sarif_file: results.sarif
