@@ -40,9 +40,8 @@ import {
   isMainOrDetachedOnMain,
 } from "./guard-branch-isolation.mjs";
 import {
-  bashCommands,
   classifyBashCommand,
-  redirectTargets,
+  pathsNamed,
   secretPathsNamed,
 } from "./guard-readonly-bash.mjs";
 import { canonicalize, isProtectedPath } from "./lib/protected-paths.mjs";
@@ -72,8 +71,10 @@ export function namesGuardedPath(word) {
  * @returns {string | undefined} why the command touches a secret, else undefined
  */
 export function secretsReason(command, cwd) {
-  for (const { verb, path } of secretPathsNamed(command, cwd)) {
-    if (!MENTION_ONLY.has(verb)) {
+  for (const { verb, path, nested } of secretPathsNamed(command, cwd)) {
+    // A verb that only prints is harmless alone, but inside a substitution its output
+    // feeds an outer command: `cat $(echo .env)`.
+    if (nested || !MENTION_ONLY.has(verb)) {
       return verb === "(redirect)"
         ? `redirects output to a secrets path (${path})`
         : `runs "${verb}" on a secrets path (${path})`;
@@ -91,10 +92,7 @@ export function secretsReason(command, cwd) {
  */
 export function branchReason(command, cwd, git) {
   if (!classifyBashCommand(command, { cwd }).blocked) return undefined;
-  const named = [
-    ...bashCommands(command).flatMap((c) => c.tokens),
-    ...redirectTargets(command),
-  ].find(namesGuardedPath);
+  const named = pathsNamed(command, cwd).find(namesGuardedPath);
   const top = git(["rev-parse", "--show-toplevel"]);
   const inside =
     top !== "" && isProtectedPath(join(canonicalize(cwd), "x"), canonicalize(top));

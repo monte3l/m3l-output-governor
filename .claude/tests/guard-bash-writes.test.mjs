@@ -102,6 +102,110 @@ test("a heredoc body is data: prose in it is not a use of a secrets path, a lite
   });
 });
 
+test("a secret named inside a substitution, a wrapper string or code is refused", () => {
+  withRepo("feat/x", (dir) => {
+    // assembled at runtime, or this file would trip the no-CommonJS guard it sits beside
+    const read = ["req", "uire('fs').readFileSync('.env')"].join("");
+    for (const command of [
+      "echo $(cat .env)", 'echo "$(cat .env)"', "echo `cat .env`", "echo $(<.env)", "echo ok; echo $(cat .env)",
+      "cat $(echo .env)", "cat $(printf .env)", "echo $(echo .env)",
+      "sh -c 'cat .env'", 'bash -c "cat ./.env.local"', "eval 'cat .env'", "eval cat .env", "env cat .env", "xargs cat < .env",
+      "ssh host 'cat .env'", "python3 -c \"print(open('.env').read())\"", "perl -e 'print <.env>'", `node -e "${read}"`,
+      "awk 1 .env", "bash <<'EOF'\ncat .env\nEOF", "python3 - <<'EOF'\nopen('.env').read()\nEOF",
+    ]) {
+      assert.equal(status(command, dir), 2, command);
+    }
+  });
+});
+
+test("a glob inside a wrapper string or a shell heredoc is expanded, and an unreadable cd is judged", () => {
+  withRepo("feat/x", (dir) => {
+    mkdirSync(join(dir, "sub"));
+    writeFileSync(join(dir, "sub", ".env"), "x");
+    for (const command of ["sh -c 'cat sub/.e*'", "bash <<'EOF'\ncat sub/.en?\nEOF", "cd sub && sh -c 'cat .e*'"]) {
+      assert.equal(status(command, dir), 2, command);
+    }
+    assert.equal(status("cd ~ && ls", dir), 0, "no glob, nothing to expand");
+    assert.equal(status("cd docs && ls *", dir), 0, "a readable cd into a clean directory");
+    // after a cd the guard cannot follow, a glob whose pattern could match a secret name is refused
+    for (const command of ["cd $X && cat cred*", "cd ~ && cat id_*", "cd - && cat sec*", "cd ~ && cat .e*", "cd ~ && cat *.pem"]) {
+      assert.equal(status(command, dir), 2, command);
+    }
+    // a leading dot is never matched by `*`, so `*env` cannot reach `.env`
+    assert.equal(status("cd ~ && cat *env", dir), 0, "a pattern that cannot match a dotfile");
+    // After a cd the guard cannot follow, a glob is judged by its pattern: it cannot match a
+    // secrets path unless the names it could produce include one.
+    for (const command of [
+      "cd $HOME && node --test tests/*.test.mjs", "cd ~ && cat *.md", "cd - && ls scripts/*.mjs", "cd $X && wc -l docs/*.txt",
+      "cd ~ && for f in a/*.mjs; do node --check $f; done",
+    ]) {
+      assert.equal(status(command, dir), 0, command);
+    }
+  });
+});
+
+test("a heredoc is code only when a shell or interpreter shares the line with its marker", () => {
+  withRepo("feat/x", (dir) => {
+    // the heredoc feeds cat or git, so its body is data, even though python3 runs later on
+    for (const command of [
+      "cat > notes.txt <<'EOF'\nthe .env file and secrets\nEOF\npython3 -c \"print(1)\"",
+      "git commit -F - <<'EOF'\nmentions .env and secrets/key\nEOF\nsh -c 'echo done'",
+      "cat <<'EOF' > notes.txt\nsee .env\nEOF\nnode --test",
+    ]) {
+      assert.equal(status(command, dir), 0, command);
+    }
+    // an interpreter on the marker's line, or a pipe into one, makes the body its program
+    for (const command of [
+      "python3 - <<'EOF'\nopen('.env').read()\nEOF",
+      "cat <<'EOF' | bash\ncat .env\nEOF",
+      "bash <<'EOF'\ncat secrets/key\nEOF",
+      "cat <<'EOF' | python3\nopen('.env')\nEOF",
+    ]) {
+      assert.equal(status(command, dir), 2, command);
+    }
+  });
+});
+
+test("code that only mentions a secret by name, not by path, is allowed", () => {
+  withRepo("feat/x", (dir) => {
+    for (const command of [
+      "echo $(pwd)", 'echo "$(git rev-parse --show-toplevel)"', 'git commit -m "fix secrets handling"', "sh -c 'echo hi'",
+      'python3 -c "print(1)"', "python3 - <<'EOF'\nprint('the secrets module and credentials')\nEOF",
+      "bash <<'EOF'\necho hello\nEOF", "node --test", "git log --oneline | head",
+    ]) {
+      assert.equal(status(command, dir), 0, command);
+    }
+  });
+});
+
+test("a recursive glob and a glob after a cd are expanded for the secrets check", () => {
+  withRepo("feat/x", (dir) => {
+    mkdirSync(join(dir, "sub"));
+    writeFileSync(join(dir, "sub", ".env"), "x");
+    for (const command of ["cat **/.env", "cat **/.env*", "cd sub && cat .e*", "cd sub; cat .en?"]) {
+      assert.equal(status(command, dir), 2, command);
+    }
+    for (const command of ["cd docs && cat .e*", "cat **/*.md", "cd docs; ls"]) {
+      assert.equal(status(command, dir), 0, command);
+    }
+  });
+});
+
+test("on main, a guarded directory named through a glob, a variable or a wrapper is refused", () => {
+  withRepo("main", (dir) => {
+    for (const command of [
+      "touch scr*/measure.mjs", "touch s[c]ripts/measure.mjs", "rm te?ts/a.test.mjs", "D=scripts; touch $D/x", "touch $(echo scripts)/x",
+      "sh -c 'touch scripts/x'", 'bash -c "echo x > tests/a"', 'eval "rm scripts/measure.mjs"', "python3 -c \"open('scripts/x','w')\"",
+      "bash <<'EOF'\ntouch scripts/x\nEOF", "cd scr* && touch x",
+    ]) {
+      assert.equal(status(command, dir), 2, command);
+    }
+    for (const command of ["echo $(pwd)", "git log --oneline | head", "git switch -c feat/x", "touch README.md", "echo $(git rev-parse --show-toplevel)"]) {
+      assert.equal(status(command, dir), 0, command);
+    }
+  });
+});
+
 test("on main, a write that names a guarded directory is refused", () => {
   withRepo("main", (dir) => {
     for (const command of [

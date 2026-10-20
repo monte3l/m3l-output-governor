@@ -52,10 +52,8 @@ const ALLOW = [
   "node --test --test-name-pattern=foo", "node --test --test-reporter=spec", "node --test tests/a.test.mjs tests/b.test.mjs",
   "node --no-warnings scripts/measure.mjs", "node scripts/measure.mjs -p", "node scripts/measure.mjs --project --gate 100",
   "cd scripts", "cd ./scripts", "cd scripts/sub && ls", "printf '%s' hi", "test -f x", "[ -d scripts ]", "[[ -f README.md ]]", "[ -n \"x\" ]",
-  "echo {", "echo }", "echo {a}", "echo '{a,b}'", 'echo "{a,b}"', "{ ls; }", "cat <<< hi", "cat README.m?", "ls scripts/*.mjs", "wc -l tests/*.test.mjs",
-  // round 5: a heredoc body is data, so prose in it is not a command
-  "cat <<'EOF'\nrm -rf x and secrets and $(not run)\nEOF", "cat <<EOF\nplain text with secrets\nEOF", "cat <<-EOF\n\ttabbed text\n\tEOF",
-  'cat <<"EOF"\n$HOME `x`\nEOF', "cat <<EOF | grep x\nplain\nEOF", "grep foo <<'EOF'\nfoo\nEOF", "cat <<EOF\nline one\nline two\nEOF\nls",
+  "echo {", "echo }", "echo '{a,b}'", 'echo "{a,b}"', "{ ls; }", "cat <<< hi", "cat README.m?", "ls scripts/*.mjs", "wc -l tests/*.test.mjs",
+  // (a heredoc is refused outright for a read-only agent: see the block list)
 ];
 
 // Commands a read-only agent must not run. Every group is a way past an earlier
@@ -113,10 +111,12 @@ const BLOCK = [
   // round 4: brace expansion hides a flag from every flag check
   "git diff --ext{,}-diff", "git log --out{put,}=/tmp/o", "git ls-remote --upload-pack{,}='touch x' .", "sort -{o,u} x", "echo {a,b}", "echo x{1..3}",
   "ls {a..c}", "cat .en{v,x}", "ls {a,b}/x", "cat {.env,README.md}", "git diff --{ext,no}-diff",
+  // round 5: any unquoted brace that does not open a group is refused, not only the forms recognised
+  "echo {a}", "ls {a}", "echo {a}b", "ls a{b", "echo {}x", "git log --{oneline}",
   // round 4: a secrets path behind a glued redirect, a glued flag or a glob
   "cat <.env", "cat 0<.env", "cat <<<.env", "grep -f.env x", "grep --file=.env x", "cat <.env.local", "cat <secrets/key", "sort -T.env x",
   // (globs that need real files to match are in the temp-directory tests below)
-  "cat *.pem", "cat /proc/*/environ", "cat **/*.mjs", "cat sub/**",
+  "cat *.pem", "cat /proc/*/environ",
   // round 4: node flags are an allowlist
   "node --test --test-reporter-destination=/tmp/o", "node --test-update-snapshots --test", "node --watch scripts/measure.mjs", "node --inspect-brk scripts/measure.mjs",
   "node --max-old-space-size=1 scripts/measure.mjs", "node --no-deprecation scripts/measure.mjs", "node --require ./x scripts/measure.mjs", "node --experimental-vm-modules scripts/a.mjs",
@@ -126,7 +126,10 @@ const BLOCK = [
   "cd /", "cd /tmp", "cd ~", "cd", "cd ..", "cd ../x", "cd scripts/../..", "cd -", "cd a b", "cd -P /tmp", "cd /tmp && ls",
   // round 5: git after a cd reads another directory's config
   "cd scripts && git status", "cd sub; git log", "cd scripts\ngit diff",
-  // round 5: a heredoc body is expanded unless its delimiter is quoted, and a fake marker hides nothing
+  // round 5: a heredoc is refused outright. A read-only agent has no use for one, and stripping its
+  // body would hide text from every check, so none is parsed.
+  "cat <<'EOF'\nrm -rf x and secrets and $(not run)\nEOF", "cat <<EOF\nplain text with secrets\nEOF", "cat <<-EOF\n\ttabbed text\n\tEOF",
+  'cat <<"EOF"\n$HOME `x`\nEOF', "cat <<EOF | grep x\nplain\nEOF", "grep foo <<'EOF'\nfoo\nEOF", "cat <<EOF\nline one\nline two\nEOF\nls",
   "cat <<EOF\ncost $5\nEOF", "cat <<EOF\n`id`\nEOF", "cat <<EOF >out\nx\nEOF", "cat <<EOF; rm y\nbody\nEOF", "cat <<EOF\nx\nEOF\nrm y",
   "echo '<<EOF'\nrm x\nEOF", 'echo "<<EOF"\nrm x\nEOF', "echo $((1<<EOF))\nrm x\nEOF", "echo a <<<b\nrm x", "cat <<EOF\n$(rm x)\nEOF",
   "bash <<'EOF'\nls\nEOF", "python3 - <<'EOF'\nprint(1)\nEOF", "node - <<'EOF'\nx\nEOF", "git commit -F - <<'EOF'\nmsg\nEOF",
@@ -236,19 +239,46 @@ test("a glob that matches a file named like an option is refused", () => {
   }
 });
 
-test("a glob after a cd is refused, since it expands somewhere else", () => {
-  // The root is clean and only sub/ holds a dotenv file, so `.e*` matches nothing
-  // where the guard looks and `.env` where the shell will look after the cd.
+test("a glob after a cd expands where the cd leads", () => {
+  // The root is clean and only sub/ holds a dotenv file, so `.e*` matches nothing where the
+  // command starts and `.env` where the shell is after the cd.
   const dir = mkdtempSync(join(tmpdir(), "guard-cd-"));
   try {
     mkdirSync(join(dir, "sub"));
+    mkdirSync(join(dir, "clean"));
     writeFileSync(join(dir, "README.md"), "x");
     writeFileSync(join(dir, "sub", ".env"), "x");
+    writeFileSync(join(dir, "clean", "a.mjs"), "x");
     assert.equal(classifyBashCommand("cat .e*", { cwd: dir }).blocked, false, "clean root, no cd");
     assert.equal(classifyBashCommand("cd sub && cat .e*", { cwd: dir }).blocked, true);
     assert.equal(classifyBashCommand("cd sub; cat .e*", { cwd: dir }).blocked, true);
-    assert.match(classifyBashCommand("cd sub && cat .e*", { cwd: dir }).reason ?? "", /after a cd/);
-    assert.equal(classifyBashCommand("cd sub && cat a.mjs", { cwd: dir }).blocked, false);
+    assert.match(classifyBashCommand("cd sub && cat .e*", { cwd: dir }).reason ?? "", /secrets path \(\.env\)/);
+    assert.equal(classifyBashCommand("cd clean && cat *", { cwd: dir }).blocked, false, "a clean directory after a cd");
+    assert.equal(classifyBashCommand("cd clean && cat a.mjs", { cwd: dir }).blocked, false);
+    // a cd the guard cannot follow leaves a later glob unexpandable, and it is refused
+    for (const command of ["cd && cat *", "cd ~ && cat *", "cd - && cat *"]) {
+      assert.equal(classifyBashCommand(command, { cwd: dir }).blocked, true, command);
+    }
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("a recursive glob is expanded and judged by what it matches", () => {
+  const dir = mkdtempSync(join(tmpdir(), "guard-star-"));
+  try {
+    mkdirSync(join(dir, "sub"));
+    mkdirSync(join(dir, "node_modules", "pkg"), { recursive: true });
+    writeFileSync(join(dir, "README.md"), "x");
+    writeFileSync(join(dir, "sub", "a.mjs"), "x");
+    writeFileSync(join(dir, "node_modules", "pkg", ".env"), "x");
+    assert.equal(classifyBashCommand("cat **/*.mjs", { cwd: dir }).blocked, false, "no secret matches");
+    assert.equal(classifyBashCommand("wc -l **/*.md", { cwd: dir }).blocked, false);
+    assert.equal(classifyBashCommand("cat **/.env*", { cwd: dir }).blocked, false, "node_modules is not walked");
+    writeFileSync(join(dir, "sub", ".env"), "x");
+    assert.equal(classifyBashCommand("cat **/.env*", { cwd: dir }).blocked, true, "a dotenv file under sub/");
+    assert.match(classifyBashCommand("cat **/.env*", { cwd: dir }).reason ?? "", /secrets path/);
+    assert.equal(classifyBashCommand("cat **/*.mjs", { cwd: dir }).blocked, false, "still allowed");
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
