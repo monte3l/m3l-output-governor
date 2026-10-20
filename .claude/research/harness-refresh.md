@@ -28,7 +28,7 @@ CI pins 2.1.303 in `.github/ci-tools/`.
 
 | Claim | Position now | Source |
 | --- | --- | --- |
-| An installed plugin loads a `.claude/` folder at its root | **No official source says so.** The documented layout lists only root directories (`skills/`, `agents/`, `hooks/hooks.json`, and so on). Treat `.claude/` as repo-only harness. Probed 2026-10-20 (UNVERIFIED.md closed row 21): an inline `--plugin-dir` load registered 0 hooks and read nothing under `.claude/`. Repeat on the installed copy via the catalog smoke-install | code.claude.com/docs/en/plugins-reference |
+| An installed plugin loads a `.claude/` folder at its root | **No official source says so.** The documented layout lists only root directories (`skills/`, `agents/`, `hooks/hooks.json`, and so on). Treat `.claude/` as repo-only harness. Probed 2026-10-20 (UNVERIFIED.md closed row 21): an inline `--plugin-dir` load registered 0 hooks and read nothing under `.claude/`. Repeated on the copy installed from the catalog the same day (UNVERIFIED.md Closed 24) | code.claude.com/docs/en/plugins-reference |
 | `claude plugin validate` checks a `CLAUDE.md` at the plugin root | Consistent with keeping the project file at `.claude/CLAUDE.md` | code.claude.com/docs/en/plugins/cli-reference |
 | A committed project-scope `enabledPlugins: true` does not install the plugin; the `/plugin` Errors tab reports it | Each of the 8 entries needs `claude plugin install <id> --scope project` | code.claude.com/docs/en/plugins/loading |
 | `onFailure: "block"` on command hooks needs Claude Code 2.1.295 or later | Used on two guards. No minimum version is declared in the repo | code.claude.com/docs/en/hooks |
