@@ -49,16 +49,25 @@
           {
             "type": "command",
             "command": "node \"$CLAUDE_PROJECT_DIR/.claude/hooks/guard-git-push-signed.mjs\"",
+            "onFailure": "block",
             "timeout": 30
           },
           {
             "type": "command",
             "command": "node \"$CLAUDE_PROJECT_DIR/.claude/hooks/guard-double-background.mjs\"",
+            "onFailure": "block",
             "timeout": 30
           },
           {
             "type": "command",
             "command": "node \"$CLAUDE_PROJECT_DIR/.claude/hooks/guard-readonly-bash.mjs\"",
+            "onFailure": "block",
+            "timeout": 30
+          },
+          {
+            "type": "command",
+            "command": "node \"$CLAUDE_PROJECT_DIR/.claude/hooks/guard-bash-writes.mjs\"",
+            "onFailure": "block",
             "timeout": 30
           }
         ]
@@ -69,19 +78,20 @@
           {
             "type": "command",
             "command": "node \"$CLAUDE_PROJECT_DIR/.claude/hooks/guard-no-commonjs.mjs\"",
+            "onFailure": "block",
             "timeout": 30
           },
           {
             "type": "command",
             "command": "node \"$CLAUDE_PROJECT_DIR/.claude/hooks/guard-branch-isolation.mjs\"",
-            "timeout": 30,
-            "onFailure": "block"
+            "onFailure": "block",
+            "timeout": 30
           },
           {
             "type": "command",
             "command": "node \"$CLAUDE_PROJECT_DIR/.claude/hooks/guard-secret-writes.mjs\"",
-            "timeout": 30,
-            "onFailure": "block"
+            "onFailure": "block",
+            "timeout": 30
           }
         ]
       }

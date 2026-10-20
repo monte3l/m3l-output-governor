@@ -132,9 +132,8 @@ export function isSecretWrite(filePath, content) {
 }
 
 // Kept as a duplicated, self-contained block in every hook file rather than
-// imported from a shared helper -- each hook stays a single independent
-// file, which keeps this project's hook count easy to reason about against
-// CLAUDE.md's hook budget. `import.meta.url` is symlink-resolved but
+// imported from a shared helper, so this check has no import that could fail.
+// `import.meta.url` is symlink-resolved but
 // `process.argv[1]` is not, so comparing them directly would be false under
 // a symlinked invocation path -- and the guard below would then never run,
 // i.e. silently fail open (exit 0) instead of blocking.
@@ -155,6 +154,8 @@ if (isEntryPoint()) {
   } catch {
     process.exit(0);
   }
+  // A payload that is not an object names nothing to judge; do not crash on it.
+  if (typeof input !== "object" || input === null) process.exit(0);
 
   // NotebookEdit carries `notebook_path`, not `file_path`.
   const filePath =
