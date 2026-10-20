@@ -1,93 +1,42 @@
 #!/usr/bin/env node
 /**
- * PreToolUse guard (Bash): restrict read-only spokes to non-mutating shell
- * commands. A "spoke" here is a subagent the hub dispatches a piece of work
- * to (see .claude/CLAUDE.md's Harness section); a "read-only spoke" is one
- * whose job is to inspect the repo -- review it, research it, run a
- * diagnostic -- and never change it.
+ * PreToolUse guard (Bash): hold the read-only agents to a short list of
+ * read-only commands.
  *
- * Every reviewer/research spoke in `.claude/agents/*.md` declares itself
- * read-only in its system prompt and may hold the `Bash` tool for
- * legitimate reads (`git diff`, `node --test`, `grep`), but
- * nothing structurally stops one from running a mutating shell command
- * instead. This hook closes that gap at the point a subagent's Bash call
- * actually runs.
+ * WHO IT COVERS. Only the agents defined in `.claude/agents/*.md` whose
+ * frontmatter `name` is not in `WRITER_SPOKES` (`.claude/hooks/lib/agent-roster.mjs`,
+ * empty here): Explore, code-reviewer and silent-failure-hunter. A call is
+ * attributed to an agent by the hook payload's `agent_type`. **Everything else
+ * passes unchecked**: the main session (no `agent_type`), built-in agents such
+ * as `general-purpose`, and agents shipped by plugins (`plugin-dev:*`,
+ * `claude-security:*`, ...), whether or not they hold Bash. That is deliberate,
+ * since the main session and general-purpose agents must write files and a
+ * plugin's patch generator must run builds, but it means this is a safety net
+ * for three agents, not a barrier for every helper. To hold another agent to the
+ * same rule, give it an entry in `.claude/agents/` with the same name, or narrow
+ * its `tools`.
  *
- * The read-only roster is derived here, not hardcoded: every defined agent
- * under `.claude/agents/*.md` whose frontmatter `name` is not in
- * `WRITER_SPOKES` (`.claude/hooks/lib/agent-roster.mjs`, empty in
- * this repository) counts as read-only, so the roster stays
- * in one place.
+ * HOW IT DECIDES. An allowlist. A command passes only if each of its segments
+ * (split on `;`, `&&`, `||`, `|`, `&` and newlines) expands nothing (no `$`,
+ * backtick or process substitution), redirects only to a discard target, assigns
+ * no shell variable, names no secrets path, and runs a verb on READ_ONLY_VERBS or
+ * in VERB_RULES with flags that pass that verb's rule. Everything else is
+ * blocked, including every shell, wrapper (`sudo`, `env`, `xargs`, `timeout`,
+ * `nice`, ...), interpreter (`python`, `awk`) and network tool.
  *
- * Scope: only tool calls made from inside one of those read-only subagents
- * are checked -- identified via the hook payload's `agent_type` field
- * (a call with no `agent_type` is not restricted). Applying the read-only
- * restriction whenever `agent_type` names a read-only agent is fail-safe --
- * it only refuses more -- so no `agent_id` check is needed here.
+ * WHY AN ALLOWLIST. This file used to be a denylist of mutating commands, and
+ * three security reviews in a row each found another way past it: `env -S`,
+ * `sudo -u root`, `git diff --output=FILE`, `$(...)`, `timeout 5 rm`. A denylist
+ * has to name every way to run something; an allowlist does not. The cost is
+ * that a command nobody listed is blocked, which is the safe direction. Extend
+ * the list one verb at a time, with a rule for any flag that writes or runs
+ * something, and add a case to `.claude/tests/guard-readonly-bash.test.mjs`.
  *
- * Design tradeoff, matching every sibling guard hook's fail-open
- * philosophy: this is a DENYLIST of known-mutating patterns, not a strict
- * allowlist. A stricter allowlist would be more airtight but would also
- * block legitimate read commands this hook's author didn't anticipate (a
- * false positive wedges a reviewer's diagnostic work; a false negative
- * merely defers to code review, which remains the authoritative backstop).
- * Extend MUTATING_PATTERNS as new gaps are found rather than flipping to an
- * allowlist.
- *
- * Known, accepted gaps in the prefix-verb/nested-shell handling (deliberate,
- * per the tradeoff above -- not oversights): a prefix verb's OWN value-taking
- * flag (`sudo -u root rm x`, `env -C /tmp rm x`, `xargs -n 1 rm`) resolves the
- * flag's value as the verb, missing the real command. A nested shell's `-c`
- * command string (standalone `-c` or a short-option cluster like `-lc`) is
- * unwrapped and classified recursively wherever the verb resolves to a shell
- * -- behind `sudo`/`env`/`xargs`/`command`, leading `VAR=value` assignments,
- * or `npx`/`pnpm exec`/`pnpm dlx`/`npm exec` (whose own shell-mode flags,
- * `-c`/`--call`/`--shell-mode`, are unwrapped the same way) -- but only for
- * the shells `bash sh zsh dash ksh`; `eval`, `busybox sh` and a shell reached
- * through an unrecognized wrapper (`nice`, `nohup`, `timeout`, `xargs -I{}`,
- * ...) are not unwrapped unless listed -- `time` is the one such wrapper
- * stripped, alongside the leading reserved words `if then else elif do while
- * until ! {` and a glued `(`/`{`. Beyond that strip, shell grammar is not
- * modelled: a `case ... esac` body (`pat) rm x ;;` resolves `pat)` as the
- * verb), a function definition or call (`f() { rm x; }; f`) and an alias run
- * whatever they wrap unseen. A wrapper's "tool" word that holds whitespace
- * once unquoted (`npx "rm -rf src"`) is judged as a command string. Every word is unquoted
- * the way the shell would before it is compared (`"rm"`, `r\m` and `git
- * "commit"` match as `rm`/`git commit`); a verb or subcommand word, or a
- * nested command string, that uses `$'...'` ANSI-C quoting or whose quote
- * never closes blocks rather than being decoded. `find`'s `-exec` check only
- * inspects the immediate next token, missing `-execdir`/`-ok` and a chained
- * `-exec sh -c '...'`. Interpreters are not inspected either: a file write
- * from inside `node -e`, `python -c`, `perl -e`, `ruby -e` or a script they
- * run passes, since recognizing it would mean parsing another language.
- * `git -c key=value`/`--config-env` is checked against GIT_EXEC_CONFIG_KEY, a
- * DENYLIST of the known command-executing config keys (pagers, editors,
- * aliases, credential helpers, textconv, ...) -- a command-running key git
- * adds later, or one not on that list, passes; `include.path`/
- * `includeIf.<cond>.path` and the `GIT_CONFIG*` file-swapping variables block,
- * but a config FILE the user already controls (the repo's `.git/config`,
- * `~/.gitconfig`) can still set an exec key and is never read. Leading `VAR=value`
- * assignments ahead of `git` are likewise checked against GIT_EXEC_ENV, a
- * DENYLIST of git's own command-executing environment variables; the
- * equivalent variables of other tools (`PAGER`, `EDITOR`, `LESSOPEN`, ...)
- * are not inspected at all, nor is a variable exported earlier in the session
- * rather than on the command itself. Command substitution is only inspected
- * for a redirect inside a double-quoted `"$(...)"`/backtick span; a bare
- * `$(...)`/backtick substitution outside double quotes, `<(...)` process
- * substitution and here-strings are not recursively classified, so
- * `echo $(rm x)` passes. Chain operators (`&&`, `||`, `|`, `&`, `;`, newline)
- * inside a quoted string do not split the command; a `bash -c '...'` payload
- * therefore stays one segment and is re-split, with the same quote-aware
- * rules, when it is classified recursively. The exec-config-key list stays a
- * denylist even after its extension to drivers, filters and tool commands.
- *
- * `git branch` and `git tag` are the exceptions to the denylist design: their
- * flag surfaces accept unique-prefix abbreviations (`--unset` for
- * `--unset-upstream`), bundled/inline values (`-uorigin/main`) and
- * value-taking flags whose separated value can look like a list flag (`git tag
- * --format -l v2` creates `v2`), which no denylist of spellings can keep up
- * with, so each is judged against an ALLOWLIST of its read-only flags
- * (GIT_BRANCH_READ_FLAGS, GIT_TAG_READ_FLAGS) -- anything else blocks.
+ * WHAT IT CANNOT MAKE READ-ONLY. `node --test` and the docs check run repository
+ * code, which can write files; no flag check changes that. `git` reads the
+ * repository's own config, which can name programs (`core.fsmonitor`); it trusts
+ * that config. `grep -r` over a tree can still read dotenv content, and `cd` can
+ * leave the repository. The `main` ruleset and CI stay the real backstops.
  */
 import process from "node:process";
 import { existsSync, readdirSync, readFileSync, realpathSync } from "node:fs";
@@ -249,20 +198,11 @@ function words(segment) {
 }
 
 /**
- * `words` under a name `classifyTokens` can reach: its own `words` local (the
- * tokenized segment) shadows the function there.
- *
- * @param {string} command
- * @returns {string[]}
- */
-const splitCommandString = (command) => words(command);
-
-/**
  * The value a shell gives one word (see `words`), with its quoting removed:
  * single quotes are literal, double quotes honor a backslash only before `$`,
  * a backtick, `"`, `\` or a newline, and an unquoted backslash escapes the
  * next character. Undefined when a quote never closes, or when the word uses
- * `$'...'` ANSI-C quoting, whose escapes (`\n`, `\x3e`, ...) can produce chain
+ * `$'...'` ANSI-C quoting (a `$'` outside any quotes), whose escapes (`\n`, `\x3e`, ...) can produce chain
  * operators and redirects this guard does not decode -- the caller fails
  * closed on undefined.
  *
@@ -270,10 +210,10 @@ const splitCommandString = (command) => words(command);
  * @returns {string | undefined}
  */
 function shellWordValue(word) {
-  if (word.includes("$'")) return undefined;
   let out = "";
   for (let i = 0; i < word.length; i++) {
     const c = word[i];
+    if (c === "$" && word[i + 1] === "'") return undefined;
     if (c === "'") {
       const end = word.indexOf("'", i + 1);
       if (end === -1) return undefined;
@@ -326,266 +266,6 @@ function baseName(token) {
   return parts[parts.length - 1];
 }
 
-// A "prefix verb" runs some OTHER command as its argument rather than
-// mutating anything itself -- without unwrapping it, the real command
-// hidden behind `sudo rm -rf x`, `env FOO=bar rm x`, or `xargs rm` is never
-// inspected at all, and passes as if it were the harmless prefix alone.
-const PREFIX_VERBS = new Set(["sudo", "env", "xargs", "command"]);
-
-// The options `env` accepts, so its flags can be read as `env` reads them
-// instead of guessed at: a skipped flag that takes a value would turn that
-// value into the command. GNU `env` takes any unique prefix of a long option
-// (`--s` is already `--split-string`). `--block-signal`, `--default-signal`
-// and `--ignore-signal` take a value only through `=`. A letter or option not
-// listed here is refused. Each entry is [name, "none" | "required" | "inline"].
-const ENV_LONG_OPTIONS = [
-  ["ignore-environment", "none"],
-  ["null", "none"],
-  ["debug", "none"],
-  ["list-signal-handling", "none"],
-  ["help", "none"],
-  ["version", "none"],
-  ["unset", "required"],
-  ["chdir", "required"],
-  ["argv0", "required"],
-  ["split-string", "required"],
-  ["block-signal", "inline"],
-  ["default-signal", "inline"],
-  ["ignore-signal", "inline"],
-];
-const ENV_FLAGS_WITHOUT_VALUE = "i0v";
-// `P` is BSD/macOS `env`'s alternate path. `S` is the split string.
-const ENV_FLAGS_WITH_VALUE = "uCPaS";
-
-// A leading `VAR=value` environment assignment; group 1 is the name.
-const ASSIGNMENT = /^([A-Za-z_][A-Za-z0-9_]*)=/;
-
-/**
- * The index just past the `VAR=value` assignment starting at `tokens[i]`. The
- * command is split on whitespace, so a quoted value containing a space
- * (`FOO='!touch pwn1'`) spans several tokens -- consume up to the one closing
- * the quote, or the rest of the command when it never closes.
- *
- * @param {string[]} tokens
- * @param {number} i
- * @returns {number}
- */
-function assignmentEnd(tokens, i) {
-  const value = tokens[i].slice(tokens[i].indexOf("=") + 1);
-  const quote = value[0];
-  if (quote !== "'" && quote !== '"') return i + 1;
-  if (value.length > 1 && value.endsWith(quote)) return i + 1;
-  let j = i + 1;
-  while (j < tokens.length && !tokens[j].endsWith(quote)) j++;
-  return Math.min(j + 1, tokens.length);
-}
-
-// Shell reserved words (and `time`, a keyword in bash/zsh) that can sit in
-// front of the command a segment actually runs -- `do rm x`, `then rm x`,
-// `! rm x`, `{ rm x`, `time rm x`. `segments` already splits on `;`/newline,
-// so each of these is the first word of the segment holding its command.
-const LEADING_RESERVED_WORDS = new Set([
-  "if",
-  "then",
-  "else",
-  "elif",
-  "do",
-  "while",
-  "until",
-  "!",
-  "{",
-  "time",
-]);
-
-// Reserved words opening a segment that names no command at all: the `for
-// NAME in WORDS` / `select NAME in WORDS` / `case WORD in` header. The body
-// that follows (`do ...`, `pattern) ...`) is its own segment.
-const HEADER_RESERVED_WORDS = new Set(["for", "select", "case"]);
-
-/**
- * Drops a chain of leading shell reserved words/grouping tokens
- * (LEADING_RESERVED_WORDS, a `(`/`{` glued to the first word, `time`'s own
- * flags), `VAR=value` assignments and prefix verbs (with their own
- * flags/assignments) so the REAL command is what `parseTokens` resolves the
- * verb/subcommand from. A `for`/`select`/`case` header runs nothing and
- * resolves to no words. The names of every stripped assignment are returned
- * too, since an environment variable can itself make the real command run
- * something (`GIT_PAGER=sh git log`).
- *
- * An assignment is recognized from the RAW word, as the shell does (a quoted
- * `"FOO=1"` is a command name, not an assignment); reserved words, prefix
- * verbs and their flags are matched by their unquoted text.
- *
- * @param {Word[]} input
- * @returns {{ words: Word[], assignments: string[] }}
- */
-function stripPrefixVerbs(input) {
-  /** @type {string[]} */
-  const assignments = [];
-  const words = [...input];
-  const raw = (k) => words[k].raw;
-  const text = (k) => wordText(words[k]);
-  let i = 0;
-  /** The prefix verb whose flags `skipAssignments(true)` is currently skipping. */
-  let prefixVerb = "";
-  /** True once `env --` ended its options, so a later `-x` word is the command's. */
-  let envOptionsEnded = false;
-  /**
-   * The command string `env -S`/`--split-string` hands to `env`, which splits it
-   * into words and runs it with every word that follows. Kept apart so it is put
-   * back in front as the real command instead of being skipped as a flag.
-   *
-   * @type {Word | undefined}
-   */
-  let splitOperand;
-  /**
-   * Why an `env` option could not be read. Set means the whole command is
-   * refused: guessing at an option risks reading a flag's value as the command.
-   *
-   * @type {string | undefined}
-   */
-  let refusal;
-  /**
-   * Reads one flag word of `env` as `env` does. `consumed` is how many words it
-   * takes (the flag and its value), `split` the -S command string, `end` an
-   * `--` that closes the options, `refuse` why the word cannot be read.
-   *
-   * @param {number} k
-   * @returns {{ consumed: number, split?: Word, end?: boolean, refuse?: string }}
-   */
-  const envOption = (k) => {
-    const flag = text(k);
-    const nextWord = k + 1 < words.length ? words[k + 1] : undefined;
-    /** @param {string} why */
-    const refuse = (why) => ({ consumed: 1, refuse: why });
-    if (flag === "-") return { consumed: 1 };
-    if (flag === "--") return { consumed: 1, end: true };
-    if (flag.startsWith("--")) {
-      const eq = flag.indexOf("=");
-      const name = flag.slice(2, eq === -1 ? undefined : eq);
-      const matches = ENV_LONG_OPTIONS.filter(([n]) => n.startsWith(name));
-      const hit =
-        ENV_LONG_OPTIONS.find(([n]) => n === name) ??
-        (matches.length === 1 ? matches[0] : undefined);
-      if (hit === undefined) return refuse(`the option ${flag}`);
-      const [long, mode] = hit;
-      if (mode === "none") {
-        return eq === -1 ? { consumed: 1 } : refuse(`the option ${flag}`);
-      }
-      if (mode === "inline") return { consumed: 1 };
-      const value =
-        eq === -1 ? nextWord : toWord(raw(k).slice(raw(k).indexOf("=") + 1));
-      if (value === undefined) return refuse(`the option ${flag} with no value`);
-      const consumed = eq === -1 ? 2 : 1;
-      return long === "split-string" ? { consumed, split: value } : { consumed };
-    }
-    for (let c = 1; c < flag.length; c++) {
-      const letter = flag[c];
-      if (ENV_FLAGS_WITHOUT_VALUE.includes(letter)) continue;
-      if (!ENV_FLAGS_WITH_VALUE.includes(letter)) {
-        return refuse(`the option -${letter}`);
-      }
-      // The letter takes the rest of the word as its value, else the next word.
-      const glued = c + 1 < flag.length;
-      const value = glued
-        ? toWord(raw(k).slice(raw(k).indexOf(letter, 1) + 1))
-        : nextWord;
-      if (value === undefined) {
-        return refuse(`the option -${letter} with no value`);
-      }
-      const consumed = glued ? 1 : 2;
-      return letter === "S" ? { consumed, split: value } : { consumed };
-    }
-    return { consumed: 1 };
-  };
-  const skipAssignments = (allowFlags) => {
-    while (i < words.length) {
-      const name = ASSIGNMENT.exec(raw(i))?.[1];
-      if (name !== undefined) {
-        assignments.push(name);
-        i = assignmentEnd(
-          words.map((w) => w.raw),
-          i,
-        );
-      } else if (allowFlags && !envOptionsEnded && text(i).startsWith("-")) {
-        if (prefixVerb !== "env") {
-          i++;
-          continue;
-        }
-        const option = envOption(i);
-        if (option.refuse !== undefined) {
-          refusal = option.refuse;
-          i = words.length;
-          return;
-        }
-        i += option.consumed;
-        if (option.end === true) envOptionsEnded = true;
-        if (option.split !== undefined) {
-          splitOperand = { ...option.split, fromEnvSplit: true };
-          return;
-        }
-      } else {
-        return;
-      }
-    }
-  };
-  const skipReserved = () => {
-    while (i < words.length) {
-      const glued = /^[({]+/.exec(raw(i))?.[0];
-      if (glued !== undefined) {
-        const rest = raw(i).slice(glued.length);
-        if (rest === "") i++;
-        else words[i] = toWord(rest);
-      } else if (LEADING_RESERVED_WORDS.has(text(i))) {
-        const isTime = text(i) === "time";
-        i++;
-        if (isTime) while (i < words.length && text(i).startsWith("-")) i++;
-      } else {
-        return;
-      }
-    }
-  };
-  for (;;) {
-    const start = i;
-    skipReserved();
-    if (i < words.length && HEADER_RESERVED_WORDS.has(text(i))) {
-      return { words: [], assignments };
-    }
-    skipAssignments(false);
-    if (i < words.length && PREFIX_VERBS.has(baseName(text(i)))) {
-      // `command -v`/`-V` looks a name up (prints its path/description) and
-      // does not run it -- unlike every other use of `command` (and unlike
-      // `sudo`/`env`/`xargs`), the following token is never executed, so it
-      // must not be peeled off as the "real" verb.
-      const next = i + 1 < words.length ? text(i + 1) : undefined;
-      if (baseName(text(i)) === "command" && (next === "-v" || next === "-V")) {
-        break;
-      }
-      prefixVerb = baseName(text(i));
-      envOptionsEnded = false;
-      i++;
-      skipAssignments(true);
-      // After an env split string, every remaining word is an argument of the
-      // command it names; after a refusal there is nothing left to read.
-      if (splitOperand !== undefined || refusal !== undefined) break;
-    }
-    if (i === start) break;
-  }
-  if (refusal !== undefined) {
-    return {
-      words: [{ raw: "env", value: "env", envRefusal: refusal }],
-      assignments,
-    };
-  }
-  return {
-    words:
-      splitOperand === undefined
-        ? words.slice(i)
-        : [splitOperand, ...words.slice(i)],
-    assignments,
-  };
-}
-
 /**
  * Drop a subshell's closing `)` glued to a segment's last word (`(git
  * commit)` -> `git commit`), so it cannot defeat a verb/subcommand match. Only
@@ -612,156 +292,9 @@ function stripClosingParens(list) {
   return end === "" ? head : [...head, toWord(end)];
 }
 
-// Global/wrapper flags -- per verb -- that consume the FOLLOWING token as
-// their value, so the walk to find the subcommand must skip both. Without
-// this, `git -C /tmp commit` or `pnpm --dir ./foo add lodash` resolve `sub`
-// to the flag's *value* ("/tmp", "./foo") instead of the real subcommand,
-// defeating MUTATING_SUBCOMMANDS entirely (a `--flag=value` inline form
-// needs no entry here -- the value stays on the same token, which
-// parseTokens already skips as "starts with -").
-const FLAGS_WITH_VALUE = {
-  git: new Set([
-    "-c",
-    "-C",
-    "--git-dir",
-    "--work-tree",
-    "--namespace",
-    "--exec-path",
-    "--config-env",
-    "--attr-source",
-    "--super-prefix",
-    "--list-cmds",
-  ]),
-  pnpm: new Set(["-C", "--dir", "-F", "--filter", "--filter-prod"]),
-  npm: new Set(["-C", "--prefix"]),
-  // `npx -p pkg tool` / `pnpm dlx --package pkg tool`: the package to fetch,
-  // not the tool that runs.
-  npx: new Set(["-p", "--package"]),
-};
-
-/**
- * Index of the first positional (non-flag) token at or after `start`,
- * skipping each flag in `valueFlags` together with its value token; -1 when
- * there is none.
- *
- * @param {string[]} tokens
- * @param {number} start
- * @param {Set<string>} valueFlags
- * @returns {number}
- */
-function firstPositionalIndex(tokens, start, valueFlags) {
-  let j = start;
-  while (j < tokens.length) {
-    const t = tokens[j];
-    if (valueFlags.has(t)) {
-      j += 2; // skip the flag AND its value token
-    } else if (t.startsWith("-")) {
-      j += 1; // a flag that doesn't consume a following value
-    } else {
-      return j;
-    }
-  }
-  return -1;
-}
-
-/**
- * The command verb and (for multi-word CLIs) subcommand of an already
- * tokenized command, skipping leading `VAR=value` environment assignments
- * and any global flags (per FLAGS_WITH_VALUE) that appear before the
- * subcommand. `subIndex` is the subcommand's index in `tokens` (-1 when there
- * is none), so a caller can read its arguments as `tokens.slice(subIndex + 1)`.
- * `assignments` names every stripped environment assignment. `tokens` holds
- * each remaining word's matching text (wordText), index-aligned with `words`.
- *
- * @param {Word[]} rawWords
- * @returns {{ verb: string, sub: string | undefined, subIndex: number, words: Word[], tokens: string[], assignments: string[] }}
- */
-function parseTokens(rawWords) {
-  const { words, assignments } = stripPrefixVerbs(rawWords);
-  const tokens = words.map(wordText);
-  if (tokens.length === 0) {
-    return {
-      verb: "",
-      sub: undefined,
-      subIndex: -1,
-      words,
-      tokens,
-      assignments,
-    };
-  }
-
-  const verb = baseName(tokens[0]);
-  const subIndex = firstPositionalIndex(
-    tokens,
-    1,
-    FLAGS_WITH_VALUE[verb] ?? new Set(),
-  );
-  const sub = subIndex === -1 ? undefined : tokens[subIndex];
-  return { verb, sub, subIndex, words, tokens, assignments };
-}
-
-// Mutating subcommands per top-level verb (e.g. "git" -> "commit"). A verb
-// that's always mutating regardless of subcommand belongs in
-// MUTATING_VERBS below instead.
-const MUTATING_SUBCOMMANDS = {
-  git: new Set([
-    "add",
-    "commit",
-    "push",
-    "pull", // fetch + merge/rebase into the working tree
-    "merge",
-    "rebase",
-    "cherry-pick",
-    "reset",
-    "checkout",
-    "switch",
-    "branch",
-    "tag",
-    "clean",
-    "apply",
-    "am",
-    "revert",
-    "restore",
-    "rm",
-    "mv",
-    "gc",
-    "worktree", // add/remove mutate the tree layout
-    "config",
-    "stash", // push/pop/drop/apply mutate the working tree; the read-only
-    // forms (`stash list`/`stash show`) are exempted by
-    // READ_ONLY_GIT_FORMS below.
-  ]),
-  pnpm: new Set([
-    "install",
-    "i",
-    "add",
-    "remove",
-    "rm",
-    "update",
-    "publish",
-    "version",
-    "link",
-    "unlink",
-    "format", // the conventional formatter-write script
-    "lint:fix", // the conventional lint-autofix script
-  ]),
-  npm: new Set([
-    "install",
-    "i",
-    "add",
-    "remove",
-    "rm",
-    "uninstall",
-    "update",
-    "publish",
-    "version",
-    "link",
-    "unlink",
-    "format",
-    "lint:fix",
-  ]),
-};
-
+// git branch/tag: judged against an allowlist of their read-only flags, since their
+// flag surfaces take unique-prefix abbreviations and bundled values that no denylist
+// of spellings can keep up with.
 /** @typedef {{ value: "none" | "optional" | "required", pattern?: true }} ReadFlagSpec */
 
 // The ALLOWLISTS of `git branch`'s and `git tag`'s read-only flags (see the
@@ -872,70 +405,6 @@ function isReadOnlyGitTag(args) {
   );
 }
 
-// `git -c <key>=<value>` / `--config-env=<key>=<env>` keys that make git run
-// an arbitrary command (a pager, editor, alias with `!`, credential helper,
-// textconv filter, diff/merge driver, clean/smudge filter, upload-pack
-// override, difftool/mergetool/browser/man viewer command, ...). A DENYLIST
-// of the known ones -- see the module header's accepted gaps. Matched
-// case-insensitively, as git's keys are.
-const GIT_EXEC_CONFIG_KEY = new RegExp(
-  `^(?:${[
-    String.raw`.*\.pager`,
-    String.raw`pager\..+`,
-    String.raw`core\.(?:editor|fsmonitor|sshcommand|askpass|hookspath|gitproxy)`,
-    String.raw`alias\..+`,
-    String.raw`credential\.(?:.+\.)?helper`,
-    String.raw`diff\.external`,
-    String.raw`diff\..+\.command`,
-    String.raw`.*\.textconv`,
-    String.raw`filter\..+\.(?:clean|smudge|process)`,
-    String.raw`merge\..+\.driver`,
-    String.raw`remote\..+\.(?:uploadpack|receivepack|proxy|vcs)`,
-    String.raw`(?:diff|merge)tool\..+\.cmd`,
-    String.raw`web\.browser`,
-    String.raw`browser\..+\.cmd`,
-    String.raw`man\..+\.cmd`,
-    String.raw`sequence\.editor`,
-    String.raw`gpg\.(?:.+\.)?program`,
-    // Not an exec key itself, but pulls in an arbitrary config file that can
-    // set any of the keys above.
-    String.raw`include(?:if\..+)?\.path`,
-  ].join("|")})$`,
-  "i",
-);
-
-/**
- * The first `-c`/`--config-env` override among git's global flags (the
- * tokens before the subcommand) whose key executes a command, or undefined.
- *
- * @param {string[]} globalTokens
- * @returns {string | undefined} the offending key
- */
-function gitExecConfigKey(globalTokens) {
-  for (let k = 0; k < globalTokens.length; k++) {
-    const t = globalTokens[k];
-    let assignment;
-    if (t === "-c" || t === "--config-env") assignment = globalTokens[k + 1];
-    else if (t.startsWith("--config-env=")) {
-      assignment = t.slice("--config-env=".length);
-    }
-    if (assignment === undefined) continue;
-    const key = assignment.replace(/^["']/, "").split("=")[0];
-    if (GIT_EXEC_CONFIG_KEY.test(key)) return key;
-  }
-  return undefined;
-}
-
-// Environment variables that make git run an arbitrary command (a diff
-// driver, pager, editor, ssh transport, askpass/proxy helper) or inject a
-// config override the way `-c` does (GIT_CONFIG_PARAMETERS, the
-// GIT_CONFIG_COUNT/KEY_n/VALUE_n triple), or point git at another program
-// directory or hook template, or swap in another config file wholesale
-// (GIT_CONFIG, GIT_CONFIG_GLOBAL/SYSTEM, GIT_CONFIG_NOSYSTEM), which can set
-// any exec key. Any value blocks -- the variable itself is the exec surface.
-const GIT_EXEC_ENV =
-  /^GIT_(?:EXTERNAL_DIFF|PAGER|EDITOR|SEQUENCE_EDITOR|SSH|SSH_COMMAND|ASKPASS|PROXY_COMMAND|CONFIG|CONFIG_GLOBAL|CONFIG_SYSTEM|CONFIG_NOSYSTEM|CONFIG_PARAMETERS|CONFIG_COUNT|CONFIG_KEY_\w+|CONFIG_VALUE_\w+|EXEC_PATH|TEMPLATE_DIR)$/;
-
 const GIT_CONFIG_READ = new Set([
   "--get",
   "--get-all",
@@ -954,171 +423,459 @@ const GIT_CONFIG_WRITE = new Set([
   "--rename-section",
   "--remove-section",
 ]);
-// Git subcommands in MUTATING_SUBCOMMANDS that also have a purely read-only
-// form, keyed by subcommand: each predicate takes the subcommand's arguments
-// and returns true only for that read-only form. Anything else falls through
-// to the MUTATING_SUBCOMMANDS block, so an unrecognized flag still blocks.
-const READ_ONLY_GIT_FORMS = {
-  branch: isReadOnlyGitBranch,
-  worktree: (args) => args[0] === "list",
-  stash: (args) => args[0] === "list" || args[0] === "show",
-  // The legacy read flags (`--get`, `--list`, ...) or git >= 2.46's `get`/
-  // `list` subcommands; its `set`/`unset`/`edit`/... subcommands and the
-  // legacy `git config <name> <value>` write form still block.
-  config: (args) =>
-    (args[0] === "get" ||
-      args[0] === "list" ||
-      args.some((a) => GIT_CONFIG_READ.has(a))) &&
-    !args.some((a) => GIT_CONFIG_WRITE.has(a)),
-  tag: isReadOnlyGitTag,
-};
-
-// ESLint's one writing flag: `--fix` (or `--fix=<bool>`). `--fix-dry-run`
-// only reports, and `--fix-type` merely narrows what a `--fix` would touch.
-const ESLINT_FIX = /^--fix(?:=.*)?$/;
 
 /**
- * Whether a formatter/linter invocation writes files: `prettier --write`/`-w`
- * or `eslint --fix`. Any other tool returns undefined.
+ * A write redirection to anything but a discard target, as a verdict, else
+ * undefined.
  *
- * @param {string} verb
- * @param {string[]} tokens
- * @returns {string | undefined} the offending flag, or undefined
+ * @param {string} segment
+ * @returns {Blocked | undefined}
  */
-function fixerWriteFlag(verb, tokens) {
-  if (verb === "prettier") {
-    return tokens.find((t) => t === "--write" || t === "-w");
+function redirectVerdict(segment) {
+  // Write-redirection to a real file (not a discard target). No digit
+  // lookbehind: `1>file`/`2>file` are ordinary fd-prefixed writes, not fd
+  // duplication -- `2>&1` is excluded below as a `>&` operator whose target
+  // is a digit string (see the `>&word` note). Global flag: a
+  // segment can carry more than one redirect (`cmd > /dev/null > real`),
+  // and a decoy discard target must not short-circuit the scan past a
+  // real one that follows it.
+  //
+  // Quoted spans are blanked first unless they ARE a redirect's target, so
+  // a `>` inside a quoted argument (`grep "=> {" src`, `--format="%h > %s"`)
+  // is not mistaken for a redirect, while `echo x > "out.txt"` keeps its
+  // quoted target and is classified exactly as an unquoted one. Quotes are
+  // paired the way a POSIX shell pairs them: a backslash-escaped quote
+  // outside quotes (`\"`) is a literal and opens nothing, `\"` inside double
+  // quotes does not close them, and a backslash inside single quotes is
+  // literal. An unbalanced quote is left un-blanked (fail closed).
+  //
+  // Two cases skip blanking, also failing closed. A double-quoted span
+  // holding a `$(...)`/backtick command substitution is kept, since the
+  // shell still runs the substitution -- a `>` inside it is a real redirect
+  // (`echo "$(date > out)"`). And a segment using `$'...'` ANSI-C quoting is
+  // not blanked at all: its `\'` escape pairs differently from a plain
+  // single quote, so the pairing above would desync and swallow a real
+  // redirect that follows (`echo $'\'' > out #'`).
+  const scan = segment.includes("$'")
+    ? segment
+    : segment.replace(
+        /(>{1,2}[|&]?\s*)?(?<!\\)(?:'[^']*'|"(?:\\[\s\S]|[^\\"])*")/g,
+        (match, redirectOp) =>
+          redirectOp !== undefined ||
+          (match[0] === '"' && /\$\(|`/.test(match))
+            ? match
+            : `${match[0]}${match[0]}`,
+      );
+  //
+  // `>&word` is fd duplication only when `word` is a digit string or `-`
+  // (`>&2`, `2>&1`, `>&-`); any other word is a FILE both stdout and stderr
+  // are written to (`>&out.txt`, `>& out.txt`), so that form is matched as
+  // its own operator and its target examined like any other.
+  for (const redirect of scan.matchAll(/(>&|>{1,2}\|?)\s*([^\s&|;]+)/g)) {
+    const target = redirect[2].replace(/^["']|["']$/g, "");
+    if (redirect[1] === ">&" && /^(?:\d+|-)$/.test(target)) continue;
+    if (!/^(\/dev\/null|nul)$/i.test(target)) {
+      return {
+        blocked: true,
+        reason: `writes to "${redirect[2]}" via shell redirection ("${redirect[0]}")`,
+      };
+    }
   }
-  if (verb === "eslint") return tokens.find((t) => ESLINT_FIX.test(t));
   return undefined;
 }
 
-// A package spec pinned to a version or dist-tag (`prettier@3`,
-// `@scope/tool@latest`); group 1 is the bare package name, scope kept.
-const PINNED_PACKAGE = /^(@[^/@]+\/[^@]+|[^@]+)@[^/]+$/;
+/** @typedef {{ blocked: true, reason: string }} Blocked */
+
+/** @param {string} reason @returns {Blocked} */
+const block = (reason) => ({ blocked: true, reason });
+
+const ASSIGNMENT = /^[A-Za-z_][A-Za-z0-9_]*=/;
+
+// Words that open a compound command rather than name a program, so the word
+// after them is what runs. `for`/`select`/`case` open a header that names no
+// command at all (its body is a later segment), and the closers name none either.
+// `case` is deliberately not a header: its first pattern's command follows a `)` in
+// the same segment (`case x in x) rm x ;; esac`), so it stays an unlisted verb.
+const OPENERS = new Set(["if", "then", "else", "elif", "do", "while", "until", "!", "{"]);
+const HEADERS = new Set(["for", "select"]);
+const CLOSERS = new Set(["done", "fi", "esac", "}", ")", ";;"]);
 
 /**
- * The tool a wrapper runs, with any `@<version>` pin stripped, so a pinned
- * `prettier@3` is judged as `prettier`. A scoped name keeps its scope.
+ * The words of one segment that name and feed its command: leading reserved
+ * words and a glued `(` or `{` dropped, a header or closer reduced to nothing,
+ * and a closing `)` glued to the last word dropped.
  *
- * @param {string} spec
- * @returns {string}
+ * @param {Word[]} input
+ * @returns {Word[]}
  */
-function unpinnedToolName(spec) {
-  return PINNED_PACKAGE.exec(spec)?.[1] ?? spec;
+function commandWords(input) {
+  const list = [...input];
+  while (list.length > 0) {
+    const first = list[0];
+    const glued = /^[({]+/.exec(first.raw)?.[0];
+    if (glued !== undefined) {
+      const rest = first.raw.slice(glued.length);
+      if (rest === "") list.shift();
+      else list[0] = toWord(rest);
+      continue;
+    }
+    const text = wordText(first);
+    if (text.startsWith("#")) return [];
+    if (OPENERS.has(text)) {
+      list.shift();
+      continue;
+    }
+    if (HEADERS.has(text) || CLOSERS.has(text)) return [];
+    break;
+  }
+  return stripClosingParens(list);
 }
 
-// Conventional lint/format script names (run via `pnpm <script>`/`pnpm run
-// <script>`/`npm run <script>`) that forward trailing args to a fixer-capable
-// tool, and the fixer flags that make one of them rewrite files.
-const FIXER_SCRIPTS = new Set([
-  "lint",
-  "eslint",
-  "prettier",
-  "format",
-  "lint:fix",
-]);
-const FIXER_FLAG = /^(?:--fix(?:=.*)?|--write|-w)$/;
-
-// Verbs that mutate the filesystem regardless of subcommand.
-const MUTATING_VERBS = new Set([
-  "rm",
-  "mv",
-  "cp",
-  "mkdir",
-  "rmdir",
-  "touch",
-  "chmod",
-  "chown",
-  "truncate",
-  "dd",
-  "tee",
-]);
-
-// `bash -c '...'`/`sh -c "..."` (optionally through a path like
-// `/bin/bash`), capturing the quoted argument's inner content.
-const SHELL_DASH_C =
-  /^\s*(?:\S*\/)?(?:bash|sh)\s+(?:-\S+\s+)*-c\s+(['"])([\s\S]*)\1\s*$/;
-
-// Shells whose `-c <command>` is unwrapped wherever a verb resolves to one --
-// behind a prefix verb, an env assignment or a tool wrapper -- and the shell
-// options that consume the following token as their value.
-const SHELLS = new Set(["bash", "sh", "zsh", "dash", "ksh"]);
-const SHELL_VALUE_OPTIONS = new Set([
-  "-o",
-  "+o",
-  "-O",
-  "+O",
-  "--rcfile",
-  "--init-file",
-]);
-
-// A tool wrapper's own flags that run their value(s) as a shell command
-// (`npx -c '<cmd>'`, `npm exec --call '<cmd>'`, `pnpm exec --shell-mode
-// <cmd>`), keyed by wrapper verb.
-const NPX_SHELL_FLAGS = new Set(["-c", "--call"]);
-const WRAPPER_SHELL_FLAGS = {
-  npx: NPX_SHELL_FLAGS,
-  pnpx: NPX_SHELL_FLAGS,
-  npm: NPX_SHELL_FLAGS,
-  pnpm: new Set(["-c", "--shell-mode"]),
-};
-
 /**
- * For a shell invocation (`tokens[0]` is the shell), the index of the command
- * string its `-c` option runs -- `-c` alone or inside a short-option cluster
- * (`-lc`, `-ec`) -- which is the first operand after the options. -1 when no
- * `-c` is given (a script or an interactive shell); `tokens.length` when `-c`
- * is given but no operand follows.
+ * Why a segment cannot be judged by its words alone: it expands a variable,
+ * runs a command substitution (`$(...)`, a backtick) or a process substitution
+ * (`<(...)`, `>(...)`), any of which can run or reveal something the words do
+ * not show. Quotes are tracked as the shell tracks them: single quotes make
+ * everything literal, a backslash escapes the next character outside single
+ * quotes, and a double quote still expands `$` and a backtick.
  *
- * @param {string[]} tokens
- * @returns {number}
+ * @param {string} segment
+ * @returns {string | undefined}
  */
-function shellCommandIndex(tokens) {
-  let dashC = false;
-  for (let j = 1; j < tokens.length; j++) {
-    const t = tokens[j];
-    if (t === "--" || t === "-") return dashC ? j + 1 : -1;
-    if (SHELL_VALUE_OPTIONS.has(t)) {
-      j++; // skip the option's value
-    } else if (/^[-+]/.test(t)) {
-      if (/^-[A-Za-z]*c[A-Za-z]*$/.test(t)) dashC = true;
-    } else {
-      return dashC ? j : -1;
+function expansionReason(segment) {
+  let single = false;
+  let double = false;
+  for (let i = 0; i < segment.length; i++) {
+    const c = segment[i];
+    if (single) {
+      if (c === "'") single = false;
+      continue;
+    }
+    if (c === "\\") {
+      i++;
+      continue;
+    }
+    if (c === "'" && !double) {
+      single = true;
+      continue;
+    }
+    if (c === '"') {
+      double = !double;
+      continue;
+    }
+    if (c === "`") return "uses command substitution (a backtick)";
+    if (c === "$" && /[A-Za-z0-9_{(\[@*#!$?-]/.test(segment[i + 1] ?? "")) {
+      return "expands a variable or runs a command substitution ($)";
+    }
+    if (!double && (c === "<" || c === ">") && segment[i + 1] === "(") {
+      return "uses process substitution";
     }
   }
-  return dashC ? tokens.length : -1;
+  return undefined;
 }
 
+// Programs found by path are judged by their name, so only the system
+// directories count: `./cat` or `/tmp/x/cat` would run whatever file is there.
+const SYSTEM_BIN =
+  /^(?:\/usr\/local\/bin|\/usr\/bin|\/bin|\/opt\/homebrew\/bin|\/opt\/local\/bin|\/home\/linuxbrew\/\.linuxbrew\/bin)\/[A-Za-z0-9._+-]+$/;
+
+// Paths a read-only agent has no business reading: dotenv files (not the
+// `.env.example` kind), key files and the directories credentials live in. The
+// `permissions.deny` Read rules cover the Read tool only, not Bash.
+const SECRET_DIRS = new Set(["secrets", ".ssh", ".aws", ".gnupg", ".oci", ".kube"]);
+const SECRET_FILES =
+  /^(?:\.env(?:\..+)?|\.npmrc|\.netrc|\.claude\.json|\.credentials\.json|id_rsa|id_ed25519|id_ecdsa|credentials|.+\.(?:pem|key|p12|pfx))$/;
+const PUBLIC_ENV = /^\.env\.(?:example|sample|template|dist)$/;
+
 /**
- * Classify a nested shell command given as shell words (see `words`), which a
- * shell or wrapper `via` runs: each word's unquoted value is joined and the
- * result classified recursively with classifyBashCommand. Fails closed --
- * blocks -- when there is no word or one cannot be read.
- *
- * @param {string} via e.g. `bash -c`, `npx -c`
- * @param {Word[]} payloadWords
- * @returns {{ blocked: true, reason: string } | undefined}
+ * @param {string} token
+ * @returns {boolean}
  */
-function classifyNestedCommand(via, payloadWords) {
-  const values = payloadWords.map((w) => w.value);
-  if (values.length === 0 || values.includes(undefined)) {
-    return {
-      blocked: true,
-      reason: `runs a nested shell command via ${via} whose command string could not be read`,
-    };
-  }
-  const nested = classifyBashCommand(values.join(" "));
-  if (!nested.blocked) return undefined;
-  return {
-    blocked: true,
-    reason: `runs a nested shell command via ${via} that ${nested.reason}`,
-  };
+function isSecretPath(token) {
+  const candidates = token.includes("=")
+    ? [token, token.slice(token.indexOf("=") + 1)]
+    : [token];
+  return candidates.some((candidate) => {
+    // `:` splits git's `REV:path` form (`HEAD:.env`) the way `/` splits a path.
+    const parts = candidate.split(/[/\\:]/);
+    const base = parts[parts.length - 1];
+    if (PUBLIC_ENV.test(base)) return false;
+    // /proc/<pid>/environ holds the whole environment, API keys included.
+    if (base === "environ" && parts.includes("proc")) return true;
+    return (
+      SECRET_FILES.test(base) ||
+      SECRET_DIRS.has(base) ||
+      parts.slice(0, -1).some((p) => SECRET_DIRS.has(p))
+    );
+  });
 }
 
 /**
- * Classify a shell command as blocked (mutating) or allowed for a read-only
- * spoke. Denylist-based -- see the module header for the design tradeoff.
+ * Whether `token` is a long option spelled out or abbreviated to a prefix of
+ * one of `names`. getopt-style parsers (git, GNU sort) accept any unique
+ * prefix, so `--out` means `--output`; matching every prefix errs on the side
+ * of blocking.
+ *
+ * @param {string} token
+ * @param {readonly string[]} names option names without the leading `--`
+ * @returns {boolean}
+ */
+function matchesLongOption(token, names) {
+  if (!token.startsWith("--")) return false;
+  const name = token.slice(2).split("=")[0];
+  return name.length > 0 && names.some((n) => n.startsWith(name));
+}
+
+// Verbs a read-only agent may run with no further check: they only read files
+// or print. Anything not here, and not in VERB_RULES, is blocked. That default
+// is the point: a denylist has to name every way to run something, an
+// allowlist does not. Extend it deliberately, one verb at a time.
+const READ_ONLY_VERBS = new Set([
+  "ls", "cat", "head", "tail", "wc", "stat", "du", "df", "pwd", "cd",
+  "basename", "dirname", "realpath", "readlink",
+  "grep", "egrep", "fgrep", "nl", "cut", "tr", "comm", "cmp", "diff",
+  "od", "hexdump", "strings", "md5sum", "shasum", "cksum", "column", "tac", "rev", "fold",
+  "echo", "printf", "true", "false", "test", "[", "[[", "sleep", "seq",
+  "whoami", "uname", "which", "type",
+]);
+
+// Subcommands of `git` that only read. `branch`, `tag`, `config`, `stash`,
+// `worktree`, `remote` and `reflog` also have a writing form, so each is judged
+// by GIT_FORMS instead.
+const GIT_READ_SUBS = new Set([
+  "status", "diff", "log", "show", "blame", "cat-file", "ls-files", "ls-tree",
+  "rev-parse", "rev-list", "describe", "merge-base", "for-each-ref", "show-ref",
+  "grep", "shortlog", "diff-tree", "diff-index", "diff-files", "name-rev",
+  "show-branch", "cherry", "range-diff", "check-ignore", "check-attr", "count-objects",
+]);
+const GIT_FORMS = {
+  branch: isReadOnlyGitBranch,
+  tag: isReadOnlyGitTag,
+  config: (/** @type {string[]} */ args) =>
+    (args[0] === "get" || args[0] === "list" || args.some((a) => GIT_CONFIG_READ.has(a))) &&
+    !args.some((a) => GIT_CONFIG_WRITE.has(a)),
+  stash: (/** @type {string[]} */ args) => args[0] === "list" || args[0] === "show",
+  worktree: (/** @type {string[]} */ args) => args[0] === "list",
+  remote: (/** @type {string[]} */ args) =>
+    args.length === 0 ||
+    args.every((a) => a === "-v" || a === "--verbose") ||
+    (args[0] === "get-url" && args.length === 2),
+  reflog: (/** @type {string[]} */ args) => !args.some((a) => /^(?:expire|delete|drop)$/.test(a)),
+};
+// git options that run a program or write a file, whatever the subcommand. A
+// prefix of one is refused too (`--ext` is `--ext-diff`), and so is `-O` for
+// `git grep`.
+const GIT_EXEC_LONG = [
+  "upload-pack", "receive-pack", "exec", "ext-diff", "extcmd", "open-files-in-pager", "output",
+];
+// The only global options accepted before the subcommand. `-c`, `-C`,
+// `--exec-path`, `--paginate`, `--config-env` and the rest can change what git
+// runs or where it looks, so they are refused.
+const GIT_GLOBAL_OK = new Set([
+  "--no-pager", "-P", "--no-optional-locks", "--no-replace-objects",
+  "--literal-pathspecs", "--glob-pathspecs", "--noglob-pathspecs", "--icase-pathspecs",
+]);
+
+/** @param {string[]} args @returns {string | undefined} */
+function gitRule(args) {
+  let k = 0;
+  while (k < args.length && args[k].startsWith("-")) {
+    if (!GIT_GLOBAL_OK.has(args[k])) {
+      return `with the option ${args[k]}, which can change what git runs`;
+    }
+    k++;
+  }
+  const sub = args[k];
+  if (sub === undefined) return undefined;
+  const rest = args.slice(k + 1);
+  if (Object.hasOwn(GIT_FORMS, sub)) {
+    if (!GIT_FORMS[/** @type {keyof typeof GIT_FORMS} */ (sub)](rest)) {
+      return `with "${[sub, ...rest].join(" ")}", which is not a read-only form`;
+    }
+  } else if (!GIT_READ_SUBS.has(sub)) {
+    return `with "${sub}", which is not a read-only git command`;
+  }
+  for (const t of rest) {
+    if (t === "--") break;
+    if (matchesLongOption(t, GIT_EXEC_LONG)) {
+      return `with ${t}, which runs a program or writes a file`;
+    }
+    if (sub === "grep" && /^-O/.test(t)) {
+      return `with ${t}, which runs a program`;
+    }
+    if (/^(?:ext|fd)::/.test(t)) {
+      return `with ${t}, a transport that runs a program`;
+    }
+  }
+  return undefined;
+}
+
+// node options that run code given on the command line or load a module or
+// debugger before the script does. A script still runs repository code (that
+// is how `node --test` and the docs check work), which no flag check can make
+// read-only; a script path outside the repository is refused.
+const NODE_UNSAFE =
+  /^(?:-e|-p|-pe|-ep|-r|--eval|--print|--require|--import|--loader|--experimental-loader|--input-type|--inspect(?:-brk|-wait|-port)?|--env-file|--env-file-if-exists|--run)(?:=|$)/;
+
+/** @param {string[]} args @returns {string | undefined} */
+function nodeRule(args) {
+  let mode = false;
+  let testMode = false;
+  let positional = 0;
+  for (const a of args) {
+    if (NODE_UNSAFE.test(a)) return `with ${a}, which runs code from the command line or loads a module`;
+    if (a === "-") return "with -, which reads a program from standard input";
+    if (a.startsWith("-")) {
+      if (/^(?:--test(?:-.*)?|--check|-c|--version|-v|--help|-h)$/.test(a)) mode = true;
+      if (/^--test(?:-.*)?$/.test(a)) testMode = true;
+      continue;
+    }
+    positional++;
+    // The first positional is the script; with --test every positional is a test file.
+    // A script's own arguments (`measure.mjs /some/transcripts`) are its business.
+    if (
+      (positional === 1 || testMode) &&
+      (a.startsWith("/") || a.startsWith("~") || a.split("/").includes(".."))
+    ) {
+      return `with ${a}, a path outside the repository`;
+    }
+  }
+  if (positional === 0 && !mode) return "with no script, which would read a program from standard input";
+  return undefined;
+}
+
+// `sed` is allowed only to print: one line or range, or a line matching a
+// pattern, with -n. Its `w`, `e` and `r` commands and its `s///e` and
+// `s///w` flags write files or run commands, and a script cannot be vetted
+// without a parser, so anything else is refused.
+const SED_ADDR = String.raw`(?:\d+|\$|\/[^\/\\;{}]*\/)`;
+const SED_PRINT = new RegExp(String.raw`^\s*${SED_ADDR}(?:\s*,\s*${SED_ADDR})?\s*[p=]\s*$`);
+
+/** @param {string[]} args @returns {string | undefined} */
+function sedRule(args) {
+  let script;
+  for (let k = 0; k < args.length; k++) {
+    const a = args[k];
+    if (["-n", "--quiet", "--silent", "-E", "-r", "--regexp-extended"].includes(a)) continue;
+    if (a === "-e" || a === "--expression") {
+      if (script !== undefined || args[k + 1] === undefined) return "with an unreadable script";
+      script = args[++k];
+      continue;
+    }
+    if (a.startsWith("-")) return `with ${a}, which can edit files or run a script file`;
+    if (script === undefined) {
+      script = a;
+      continue;
+    }
+  }
+  if (script === undefined) return "with no script";
+  return SED_PRINT.test(script) ? undefined : "with a script other than a print, which can write files or run commands";
+}
+
+const FIND_UNSAFE = new Set([
+  "-exec", "-execdir", "-ok", "-okdir", "-delete", "-fprint", "-fprint0", "-fprintf", "-fls",
+]);
+
+/** @type {Map<string, (args: string[]) => string | undefined>} */
+const VERB_RULES = new Map([
+  ["git", gitRule],
+  ["node", nodeRule],
+  ["sed", sedRule],
+  [
+    "claude",
+    (args) =>
+      args.length === 1 && /^(?:--version|-v|--help|-h)$/.test(args[0])
+        ? undefined
+        : args[0] === "plugin" && (args[1] === "validate" || args[1] === "list")
+          ? undefined
+          : "with anything but `plugin validate`, `plugin list` or --version, which can start a session or change settings",
+  ],
+  [
+    "reuse",
+    (args) =>
+      /^(?:lint|--version|--help)$/.test(args[0] ?? "") ? undefined : `with "${args[0] ?? ""}", which can rewrite files`,
+  ],
+  [
+    "find",
+    (args) => {
+      const bad = args.find((a) => FIND_UNSAFE.has(a));
+      return bad === undefined ? undefined : `with ${bad}, which runs a command or writes a file`;
+    },
+  ],
+  [
+    "sort",
+    (args) => {
+      for (const a of args) {
+        if (a === "--") break;
+        if (matchesLongOption(a, ["output", "compress-program"])) return `with ${a}, which writes a file or runs a program`;
+        if (/^-[^-]*o/.test(a)) return `with ${a}, which writes a file`;
+      }
+      return undefined;
+    },
+  ],
+  [
+    "uniq",
+    (args) => {
+      let positional = 0;
+      for (let k = 0; k < args.length; k++) {
+        if (["-f", "-s", "-w"].includes(args[k])) k++;
+        else if (!args[k].startsWith("-")) positional++;
+      }
+      return positional > 1 ? "with an output file, which it writes" : undefined;
+    },
+  ],
+  [
+    "rg",
+    (args) => {
+      const bad = args.find((a) => /^--(?:pre|hostname-bin)(?:=|$)/.test(a));
+      return bad === undefined ? undefined : `with ${bad}, which runs a program`;
+    },
+  ],
+]);
+
+/**
+ * Judge the command one segment runs, from its words alone.
+ *
+ * @param {Word[]} list the words left once the segment's leading reserved
+ *   words are dropped (see commandWords)
+ * @returns {Blocked | undefined}
+ */
+function classifyWords(list) {
+  if (list.length === 0) return undefined;
+  // A leading shell assignment is refused even on its own: `PATH=/tmp/x` changes which
+  // program every later segment runs, and `FOO=1 cmd` hands cmd a variable.
+  if (ASSIGNMENT.test(list[0].raw)) {
+    return block("sets a shell variable, which can change what later commands run");
+  }
+  const first = list[0];
+  if (first.value === undefined) {
+    return block(`runs a command word (${first.raw}) whose quoting could not be read`);
+  }
+  const name = first.value;
+  if (/\s/.test(name)) return block("runs a quoted command string instead of a program name");
+  if (name.includes("/") && !SYSTEM_BIN.test(name)) {
+    return block(`runs a program by path (${name}), which is not a system command`);
+  }
+  if (list.some((w) => w.value === undefined)) {
+    return block("has an argument whose quoting could not be read");
+  }
+  const verb = baseName(name);
+  const tokens = list.slice(1).map((w) => /** @type {string} */ (w.value));
+  const secret = tokens.find(isSecretPath);
+  if (secret !== undefined) return block(`names a secrets path (${secret})`);
+  const rule = VERB_RULES.get(verb);
+  if (rule === undefined && !READ_ONLY_VERBS.has(verb)) {
+    return block(`runs "${verb}", which is not on the read-only command list`);
+  }
+  const why = rule?.(tokens);
+  return why === undefined ? undefined : block(`runs "${verb}" ${why}`);
+}
+
+/**
+ * Classify a shell command as blocked or allowed for a read-only spoke. An
+ * allowlist: a command passes only if every segment expands nothing, redirects
+ * only to a discard target, and runs a verb on READ_ONLY_VERBS (or in
+ * VERB_RULES, with flags that pass its rule).
  *
  * @param {string} command
  * @returns {{ blocked: boolean, reason?: string }}
@@ -1127,372 +884,16 @@ export function classifyBashCommand(command) {
   if (typeof command !== "string" || command.trim().length === 0) {
     return { blocked: false };
   }
-
   for (const segment of segments(command)) {
     if (segment.length === 0) continue;
-
-    // `bash -c '<command>'`/`sh -c '<command>'` runs the quoted argument as
-    // its own shell command -- unwrap and recurse rather than reading only
-    // the outer `bash -c` invocation, which is never itself mutating.
-    const nestedShell = SHELL_DASH_C.exec(segment);
-    if (nestedShell !== null) {
-      const nested = classifyBashCommand(nestedShell[2]);
-      if (nested.blocked) {
-        return {
-          blocked: true,
-          reason: `runs a nested shell command via -c that ${nested.reason}`,
-        };
-      }
-      continue;
-    }
-
-    // Write-redirection to a real file (not a discard target). No digit
-    // lookbehind: `1>file`/`2>file` are ordinary fd-prefixed writes, not fd
-    // duplication -- `2>&1` is excluded below as a `>&` operator whose target
-    // is a digit string (see the `>&word` note). Global flag: a
-    // segment can carry more than one redirect (`cmd > /dev/null > real`),
-    // and a decoy discard target must not short-circuit the scan past a
-    // real one that follows it.
-    //
-    // Quoted spans are blanked first unless they ARE a redirect's target, so
-    // a `>` inside a quoted argument (`grep "=> {" src`, `--format="%h > %s"`)
-    // is not mistaken for a redirect, while `echo x > "out.txt"` keeps its
-    // quoted target and is classified exactly as an unquoted one. Quotes are
-    // paired the way a POSIX shell pairs them: a backslash-escaped quote
-    // outside quotes (`\"`) is a literal and opens nothing, `\"` inside double
-    // quotes does not close them, and a backslash inside single quotes is
-    // literal. An unbalanced quote is left un-blanked (fail closed).
-    //
-    // Two cases skip blanking, also failing closed. A double-quoted span
-    // holding a `$(...)`/backtick command substitution is kept, since the
-    // shell still runs the substitution -- a `>` inside it is a real redirect
-    // (`echo "$(date > out)"`). And a segment using `$'...'` ANSI-C quoting is
-    // not blanked at all: its `\'` escape pairs differently from a plain
-    // single quote, so the pairing above would desync and swallow a real
-    // redirect that follows (`echo $'\'' > out #'`).
-    const scan = segment.includes("$'")
-      ? segment
-      : segment.replace(
-          /(>{1,2}[|&]?\s*)?(?<!\\)(?:'[^']*'|"(?:\\[\s\S]|[^\\"])*")/g,
-          (match, redirectOp) =>
-            redirectOp !== undefined ||
-            (match[0] === '"' && /\$\(|`/.test(match))
-              ? match
-              : `${match[0]}${match[0]}`,
-        );
-    //
-    // `>&word` is fd duplication only when `word` is a digit string or `-`
-    // (`>&2`, `2>&1`, `>&-`); any other word is a FILE both stdout and stderr
-    // are written to (`>&out.txt`, `>& out.txt`), so that form is matched as
-    // its own operator and its target examined like any other.
-    for (const redirect of scan.matchAll(/(>&|>{1,2}\|?)\s*([^\s&|;]+)/g)) {
-      const target = redirect[2].replace(/^["']|["']$/g, "");
-      if (redirect[1] === ">&" && /^(?:\d+|-)$/.test(target)) continue;
-      if (!/^(\/dev\/null|nul)$/i.test(target)) {
-        return {
-          blocked: true,
-          reason: `writes to "${redirect[2]}" via shell redirection ("${redirect[0]}")`,
-        };
-      }
-    }
-
-    const verdict = classifyTokens(
-      stripClosingParens(words(segment).map(toWord)),
-    );
+    const expansion = expansionReason(segment);
+    if (expansion !== undefined) return block(expansion);
+    const redirect = redirectVerdict(segment);
+    if (redirect !== undefined) return redirect;
+    const verdict = classifyWords(commandWords(words(segment).map(toWord)));
     if (verdict !== undefined) return verdict;
   }
-
   return { blocked: false };
-}
-
-/**
- * Where a tool wrapper's own arguments start, or -1 when `verb`/`sub` is not
- * one: `npx`/`pnpx [-p pkg] <tool>`, `pnpm dlx`/`pnpm exec <tool>` and
- * `npm exec`/`npm x <tool>`.
- *
- * @param {string} verb
- * @param {string | undefined} sub
- * @param {number} subIndex
- * @returns {number}
- */
-function wrappedToolStart(verb, sub, subIndex) {
-  if (verb === "npx" || verb === "pnpx") return 1;
-  if (verb === "pnpm" && (sub === "dlx" || sub === "exec")) {
-    return subIndex + 1;
-  }
-  if (verb === "npm" && (sub === "exec" || sub === "x")) return subIndex + 1;
-  return -1;
-}
-
-// `npm exec`'s own value flags on top of npm's global ones: the workspace to
-// run in and the package to fetch, neither of them the tool that runs.
-const NPM_EXEC_FLAGS_WITH_VALUE = new Set([
-  ...FLAGS_WITH_VALUE.npm,
-  "-w",
-  "--workspace",
-  "-p",
-  "--package",
-]);
-
-/**
- * The value-taking flags of a tool wrapper (see wrappedToolStart), keyed by
- * its own verb -- `pnpm exec --filter x <tool>` must skip `x` by pnpm's
- * table, which npx's does not know.
- *
- * @param {string} verb
- * @returns {Set<string>}
- */
-function wrapperValueFlags(verb) {
-  switch (verb) {
-    case "pnpm":
-      return FLAGS_WITH_VALUE.pnpm;
-    case "npm":
-      return NPM_EXEC_FLAGS_WITH_VALUE;
-    default:
-      return FLAGS_WITH_VALUE.npx;
-  }
-}
-
-/**
- * The command-level checks for one tokenized segment (everything except the
- * redirect scan, which needs the raw segment text). A tool wrapper (see
- * wrappedToolStart) recurses on `<tool> ...`, so a wrapped fixer is caught the
- * same as a bare one; `inherited` carries the environment assignments stripped
- * ahead of the wrapper, which the wrapped tool still sees. A verb word (or,
- * for a verb with MUTATING_SUBCOMMANDS, a subcommand word) that cannot be
- * unquoted -- `$'...'` ANSI-C quoting or a quote that never closes -- blocks,
- * since the command it names is unknown.
- *
- * @param {Word[]} rawWords
- * @param {readonly string[]} [inherited]
- * @returns {{ blocked: true, reason: string } | undefined}
- */
-function classifyTokens(rawWords, inherited = []) {
-  const parsed = parseTokens(rawWords);
-  const { verb, sub, subIndex, words, tokens } = parsed;
-  const assignments = [...inherited, ...parsed.assignments];
-  if (tokens.length === 0) return undefined;
-  if (words[0].envRefusal !== undefined) {
-    return {
-      blocked: true,
-      reason: `runs env with ${words[0].envRefusal}, which this guard cannot read`,
-    };
-  }
-  const unreadable =
-    words[0].value === undefined
-      ? words[0]
-      : subIndex !== -1 &&
-          MUTATING_SUBCOMMANDS[verb] !== undefined &&
-          words[subIndex].value === undefined
-        ? words[subIndex]
-        : undefined;
-  if (unreadable !== undefined) {
-    return {
-      blocked: true,
-      reason: `runs a command word (${unreadable.raw}) whose quoting could not be read`,
-    };
-  }
-  if (verb.length === 0) return undefined;
-
-  // A command word holding whitespace is a command string, not a program name:
-  // `env -S 'git -C x' commit` leaves its operand here, and so does a quoted
-  // "a b". Split it with this guard's own tokenizer and classify the result in
-  // front of the words that followed it, kept exactly as they were. `env`
-  // rewrites `\_`, `\c`, `${VAR}` and `#` inside a -S string and this guard
-  // does not, so an operand using them cannot be read and is refused.
-  const first = words[0];
-  if (
-    first.fromEnvSplit === true ||
-    (first.resplit !== true && /\s/.test(first.value))
-  ) {
-    if (first.fromEnvSplit === true && /[\\$]/.test(first.value)) {
-      return {
-        blocked: true,
-        reason:
-          "runs an env -S command string with escapes or variables that cannot be resolved here",
-      };
-    }
-    const head = splitCommandString(first.value).map((w) => ({
-      ...toWord(w),
-      resplit: true,
-    }));
-    return classifyTokens([...head, ...words.slice(1)], assignments);
-  }
-
-  if (SHELLS.has(verb)) {
-    const commandIndex = shellCommandIndex(tokens);
-    if (commandIndex !== -1) {
-      return classifyNestedCommand(
-        `${verb} -c`,
-        words.slice(commandIndex, commandIndex + 1),
-      );
-    }
-  }
-
-  if (MUTATING_VERBS.has(verb)) {
-    return { blocked: true, reason: `runs "${verb}", a mutating command` };
-  }
-
-  if (
-    verb === "sed" &&
-    tokens.some(
-      (t) => t === "-i" || t.startsWith("-i") || t.startsWith("--in-place"),
-    )
-  ) {
-    return { blocked: true, reason: `runs "sed -i" (in-place edit)` };
-  }
-
-  if (verb === "find") {
-    if (tokens.includes("-delete")) {
-      return {
-        blocked: true,
-        reason: `runs "find ... -delete", which mutates matched files`,
-      };
-    }
-    const execIndex = tokens.indexOf("-exec");
-    if (execIndex !== -1) {
-      const execVerb = baseName(tokens[execIndex + 1] ?? "");
-      if (MUTATING_VERBS.has(execVerb)) {
-        return {
-          blocked: true,
-          reason: `runs "find ... -exec ${execVerb}", which mutates matched files`,
-        };
-      }
-    }
-  }
-
-  const writeFlag = fixerWriteFlag(verb, tokens);
-  if (writeFlag !== undefined) {
-    return {
-      blocked: true,
-      reason: `runs "${verb} ${writeFlag}", which rewrites files`,
-    };
-  }
-
-  // A wrapper that runs another tool -- judge `<tool> ...` itself, its
-  // version pin stripped. Its own flags, a `--` separator included, are
-  // skipped to reach the tool, except a shell-mode flag (WRAPPER_SHELL_FLAGS),
-  // whose value is a shell command rather than a tool name. pnpm's shell-mode
-  // flag is a boolean switch, not a value flag, so its command is the words
-  // from the tool position on -- any `--filter x` between them is pnpm's own.
-  const wrapperEnd = wrappedToolStart(verb, sub, subIndex);
-  if (wrapperEnd !== -1) {
-    const toolIndex = firstPositionalIndex(
-      tokens,
-      wrapperEnd,
-      wrapperValueFlags(verb),
-    );
-    const flagsEnd = toolIndex === -1 ? tokens.length : toolIndex;
-    for (let k = wrapperEnd; k < flagsEnd; k++) {
-      const t = tokens[k];
-      if (WRAPPER_SHELL_FLAGS[verb].has(t)) {
-        const payloadStart = verb === "pnpm" ? flagsEnd : k + 1;
-        return classifyNestedCommand(`${verb} ${t}`, words.slice(payloadStart));
-      }
-      if (t.startsWith("--call=") && WRAPPER_SHELL_FLAGS[verb].has("--call")) {
-        const inline = t.slice("--call=".length);
-        return classifyNestedCommand(`${verb} --call`, [
-          {
-            raw: inline,
-            value: words[k].value === undefined ? undefined : inline,
-          },
-          ...words.slice(k + 1),
-        ]);
-      }
-    }
-    // pnpm also accepts its shell-mode flag BEFORE the subcommand (`pnpm -c
-    // exec '<cmd>'`, `pnpm -r --shell-mode exec ...`): the words from the
-    // tool position on are then the shell command.
-    const preFlag =
-      verb === "pnpm"
-        ? tokens.slice(1, subIndex).find((t) => WRAPPER_SHELL_FLAGS.pnpm.has(t))
-        : undefined;
-    if (preFlag !== undefined) {
-      return classifyNestedCommand(
-        `pnpm ${preFlag} ${sub}`,
-        toolIndex === -1 ? [] : words.slice(toolIndex),
-      );
-    }
-    if (toolIndex === -1) return undefined;
-    // Fail closed: a "tool" word holding whitespace once unquoted (`npx "rm
-    // -rf src"`) is no package name -- judge it as the command string it is.
-    if (/\s/.test(words[toolIndex].value ?? "")) {
-      return classifyNestedCommand(verb, words.slice(toolIndex));
-    }
-    const tool = unpinnedToolName(tokens[toolIndex]);
-    return classifyTokens(
-      [
-        {
-          raw: tool,
-          value: words[toolIndex].value === undefined ? undefined : tool,
-        },
-        ...words.slice(toolIndex + 1),
-      ],
-      assignments,
-    );
-  }
-  if (verb === "pnpm" && (sub === "eslint" || sub === "prettier")) {
-    return classifyTokens(words.slice(subIndex), assignments);
-  }
-
-  if (verb === "git") {
-    const envVar = assignments.find((name) => GIT_EXEC_ENV.test(name));
-    if (envVar !== undefined) {
-      return {
-        blocked: true,
-        reason: `sets ${envVar}, which makes git run an arbitrary command`,
-      };
-    }
-    const key = gitExecConfigKey(
-      tokens.slice(1, subIndex === -1 ? undefined : subIndex),
-    );
-    if (key !== undefined) {
-      return {
-        blocked: true,
-        reason: `overrides git config "${key}", which runs an arbitrary command`,
-      };
-    }
-  }
-
-  const mutatingSubs = MUTATING_SUBCOMMANDS[verb];
-  if (mutatingSubs === undefined || sub === undefined) return undefined;
-  const args = tokens.slice(subIndex + 1);
-
-  if (verb === "git" && READ_ONLY_GIT_FORMS[sub]?.(args) === true) {
-    return undefined;
-  }
-
-  // `pnpm run <script>`/`npm run <script>`: the script name is what runs, so
-  // classify it as the subcommand (`run format` blocks, `run format:check`
-  // does not). Its own value flags (`run --filter x format`) are skipped.
-  const scriptIndex =
-    (verb === "pnpm" || verb === "npm") && sub === "run"
-      ? firstPositionalIndex(tokens, subIndex + 1, FLAGS_WITH_VALUE[verb])
-      : subIndex;
-  if (scriptIndex === -1) return undefined;
-  const script = tokens[scriptIndex];
-  const shown = sub === script ? sub : `run ${script}`;
-  if (mutatingSubs.has(script)) {
-    return {
-      blocked: true,
-      reason: `runs "${verb} ${shown}", a mutating subcommand`,
-    };
-  }
-
-  // A lint/format script handed a fixer flag (`pnpm lint --fix`, `pnpm run
-  // lint -- --fix`) forwards it to the tool, which then rewrites files.
-  if (FIXER_SCRIPTS.has(script)) {
-    const fixFlag = tokens
-      .slice(scriptIndex + 1)
-      .find((t) => FIXER_FLAG.test(t));
-    if (fixFlag !== undefined) {
-      return {
-        blocked: true,
-        reason: `runs "${verb} ${shown} ${fixFlag}", which rewrites files`,
-      };
-    }
-  }
-  return undefined;
 }
 
 // Deliberately inlined in every hook rather than shared, so each hook stays
@@ -1518,6 +919,7 @@ if (isEntryPoint()) {
     process.exit(0);
   }
 
+  if (typeof input !== "object" || input === null) process.exit(0);
   const agentType = input.agent_type;
   if (typeof agentType !== "string" || agentType.length === 0) process.exit(0);
 
@@ -1539,10 +941,10 @@ if (isEntryPoint()) {
 [guard-readonly-bash] Blocked: the "${agentType}" spoke is read-only, but this
 command ${verdict.reason}.
 
-Read-only spokes may inspect the repo but never mutate it -- that separation
-is structural (.claude/hooks/lib/agent-roster.mjs keeps no writer spoke). If
-this command is genuinely needed, report it to the main session, which makes
-the change, instead of running it here.
+Read-only spokes may run only the commands on READ_ONLY_VERBS in
+.claude/hooks/guard-readonly-bash.mjs, and nothing that expands a variable, runs a
+substitution or writes a file. If this command is genuinely needed, report it to the
+main session, which makes the change, instead of running it here.
 `);
   process.exit(2);
 }
