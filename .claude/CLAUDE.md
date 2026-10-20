@@ -95,12 +95,13 @@ not excluded from the eval fixture. Put harness files under `.claude/`, never be
 
 | Path | What it does |
 | --- | --- |
-| `.claude/settings.json` | Denies reading `.env*` and `secrets/**`, registers the hooks below, sets the status line, and enables the project plugins (each needs one `claude plugin install <id> --scope project`) |
+| `.claude/settings.json` | Denies reading `.env*` and `secrets/**`, registers the hooks below (every PreToolUse guard fails closed, see "If a guard breaks"), sets the status line, and enables the project plugins (each needs one `claude plugin install <id> --scope project`) |
 | `.claude/hooks/guard-branch-isolation.mjs` | Blocks writes to `scripts/`, `evals/`, `tests/`, `skills/` and `.claude-plugin/` while HEAD is `main`. Its path set is `.claude/hooks/lib/protected-paths.mjs` |
 | `.claude/hooks/guard-git-push-signed.mjs` | Blocks a `git push` that contains unsigned commits. Uses `.claude/hooks/lib/signed-range.mjs` |
 | `.claude/hooks/guard-no-commonjs.mjs`, `guard-secret-writes.mjs`, `guard-double-background.mjs` | Block `require`/`module.exports`, writes of `.env*` or secret-shaped values, and a background command that also detaches itself |
 | `.claude/hooks/guard-readonly-bash.mjs` | Holds the read-only agents to an **allowlist** of read-only commands: no `$` expansion, substitution, shell assignment, secrets path or write redirect, and only the verbs it names. It covers only the agents defined in `.claude/agents/` (the roster is `.claude/hooks/lib/agent-roster.mjs`, empty: no agent here writes). The main session, `general-purpose` and plugin agents are not checked |
-| `.claude/tests/guard-readonly-bash.test.mjs` | 408 regression tests for that guard, mutation-tested. Not under `tests/`, where the eval fixture would see a second failing test. Run `node --test .claude/tests/guard-readonly-bash.test.mjs` after changing the guard |
+| `.claude/hooks/guard-bash-writes.mjs` | The Bash side of the secret-write and branch guards, for every session: refuses a command that names or writes a secrets path (a dotenv file, a key, `~/.ssh`, also through a glob or `HEAD:.env`) or carries a secret literal, and, while HEAD is `main`, a command that is not read-only and names a guarded directory. A heredoc body is data, not commands. It cannot see a command that writes into a guarded directory without naming it |
+| `.claude/tests/guard-readonly-bash.test.mjs`, `guard-bash-writes.test.mjs`, `settings.test.mjs` | Regression tests for the two Bash guards, mutation-tested, and integrity tests for `.claude/settings.json`: every registered hook exists and imports, every PreToolUse guard fails closed, none crashes on a malformed payload, and each still blocks what it exists to block. Not under `tests/`, where the eval fixture would see a second failing test. The `checks` lane of `verify.yml` runs them; run `node --test ".claude/tests/*.test.mjs"` after any change to a hook or to `settings.json` |
 | `.claude/hooks/inject-decision-gate.mjs` | Reminds about branch and PR before change work. Advisory, never blocks |
 | `.claude/hooks/write-compact-handoff.mjs`, `reinject-compact-handoff.mjs` | Carry a work summary across a compaction through `tmp/` (gitignored) |
 | `.claude/hooks/statusline.mjs`, `subagent-statusline.mjs`, `statusline-layout.mjs` | The status line and the per-subagent row |
@@ -111,6 +112,17 @@ not excluded from the eval fixture. Put harness files under `.claude/`, never be
 | `.claude/skills/harness-guidance/` | Checks this harness against Anthropic's current guidance. Its tracker is `.claude/research/harness-refresh.md` |
 | `.claude/skills/customize/` | The m3l-groundwork bootstrapper's own copy, used once to tailor this harness. **Local only and gitignored**: it ships TypeScript files, and every tracked file ships to plugin users. Re-create it with `npx @monte3l/groundwork .` |
 
+### If a guard breaks
+
+Every PreToolUse guard fails closed (`onFailure: "block"`): a hook that cannot start, times
+out or exits unexpectedly blocks the call. So a hook with a missing import, or a
+`settings.json` that names a file that is not there, blocks every Bash, Write and Edit call,
+the commands that would fix it included. That has happened once. To recover, run the fix
+as a `!` command in the prompt, which runs without the hooks, for example
+`! git checkout -- .claude` or `! rm .claude/settings.json` for a settings file that was
+never committed. To avoid it, run `node --test ".claude/tests/*.test.mjs"` before trusting
+a change to a hook or to settings; they would have caught it.
+
 Git workflow, enforced by the hooks above and by the `main` ruleset:
 
 - **Every change goes through a PR**, from a `feat/`, `fix/`, `ci/`, `chore/` or `docs/`
@@ -120,7 +132,12 @@ Git workflow, enforced by the hooks above and by the `main` ruleset:
   and with a signature (the ruleset rejects unsigned commits). Conventional Commits, a
   lowercase imperative subject, a prose body.
 - **Never force-push, never add a dependency, never hand-edit `design/source/`.**
-- **Never write CommonJS, a secret or an `.env` file**; the hooks refuse them.
+- **Never write CommonJS, a secret or an `.env` file**; the hooks refuse them, from the
+  Write and Edit tools and from Bash.
+- **The guards are a safety net, not a sandbox.** The read-only guard covers only the three
+  agents above; the main session, `general-purpose` and plugin agents are not checked.
+  Claude Code's own sandbox is the OS-level control for shell commands
+  (https://code.claude.com/docs/en/sandboxing); it is not enabled here.
 
 ## Docs and style
 

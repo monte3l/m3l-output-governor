@@ -20,6 +20,13 @@ Where things live in this repo (a Claude Code plugin in plain Node `.mjs`, no
 and the docs (`README.md`, `UNVERIFIED.md`, `evals/results.md`). Search these,
 not `src/`.
 
+Why this agent holds `WebSearch` and `WebFetch`: the `harness-guidance` skill
+(`.claude/skills/harness-guidance/SKILL.md`) dispatches `Explore` to research
+Anthropic's documentation, which needs both. For a question about this repository
+use none of the web tools, and when you do research, stay on the domains that skill
+passes you; reject anything else and say so. Bash is held to a read-only command
+list by `.claude/hooks/guard-readonly-bash.mjs`.
+
 Stay inside the scope the hub gave you. When asked for a "quick" lookup, do the
 minimum searches needed to answer confidently. When asked for "medium" or "very
 thorough" exploration, broaden your search across naming conventions and related
