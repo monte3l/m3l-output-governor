@@ -5,5 +5,6 @@
   "author": { "name": "Enrico Lionello" },
   "license": "MIT",
   "repository": "https://github.com/monte3l/m3l-output-governor",
-  "homepage": "https://output-governor.monte3l.com"
+  "homepage": "https://output-governor.monte3l.com",
+  "experimental": { "evals": "plugin-evals" }
 }

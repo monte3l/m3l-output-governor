@@ -67,7 +67,7 @@ test('the fixture has a failing test, two commits and one uncommitted change', (
     const run = (cmd, args) => spawnSync(cmd, args, { cwd: dir, encoding: 'utf8', env })
     assert.notEqual(run('node', ['--test', 'tests/*.test.mjs']).status, 0)
     assert.equal(run('node', ['--test', 'tests/*.test.mjs']).stdout.match(/^ℹ fail (\d+)/m)?.[1], '1')
-    for (const gone of ['.claude', 'UNVERIFIED.md', 'node_modules', 'evals', 'tests/evals.test.mjs', 'tests/doc-parity.test.mjs', 'scripts/doc-parity.mjs', 'docs.config.mjs', 'design/source']) assert.equal(existsSync(join(dir, gone)), false, gone)
+    for (const gone of ['.claude', 'UNVERIFIED.md', 'node_modules', 'evals', 'plugin-evals','tests/evals.test.mjs', 'tests/doc-parity.test.mjs', 'scripts/doc-parity.mjs', 'docs.config.mjs', 'design/source']) assert.equal(existsSync(join(dir, gone)), false, gone)
     assert.equal(run('git', ['rev-list', '--count', 'HEAD']).stdout.trim(), '2')
     assert.equal(run('git', ['status', '--short']).stdout.trimEnd(), ' M scripts/measure.mjs')
     assert.match(run('git', ['diff']).stdout, /\+\s+console\.error\('reading', file\)/)

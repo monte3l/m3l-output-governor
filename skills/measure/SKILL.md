@@ -13,7 +13,7 @@ The numbers below were computed just now from this project's session transcripts
 node "${CLAUDE_PLUGIN_ROOT}/scripts/measure.mjs" --project
 ```
 
-If `sessions` is 0, or the command printed an error, say that no transcripts were found for this directory and stop. `subagentFiles` is how many of the counted transcripts belong to subagents.
+If `sessions` is 0, say that no transcripts were found for this directory and stop. If instead the command above was replaced by a note that it did not run, such as `[shell command execution disabled by policy]`, say that the command did not run and give that reason, then stop. Do not report numbers, and do not say transcripts are missing when the command itself did not run. `subagentFiles` is how many of the counted transcripts belong to subagents.
 
 Otherwise report, in this order, labelling each number **exact** (the `exact` block, from API usage) or **estimated** (the `estimated` block, derived from characters):
 
