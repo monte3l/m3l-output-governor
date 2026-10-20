@@ -8,6 +8,8 @@
 // from the checks lane of verify.yml.
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { test } from "node:test";
 import { fileURLToPath } from "node:url";
@@ -46,6 +48,14 @@ const ALLOW = [
   "for f in a b; do cat README.md; done", "if [ -f README.md ]; then cat README.md; fi", "(ls)", "{ ls; }", "ls # a comment", "# only a comment",
   "cat /usr/bin/true", "/bin/ls", "/usr/bin/git status", "echo 'not $(a substitution)'", "echo '`not` a backtick'", 'echo "it\'s fine"', "echo \\$HOME",
   "git diff -- .env.example", "cat .env.example", "ls ~/projects",
+  // round 4: what the stricter rules must still let through
+  "node --test --test-name-pattern=foo", "node --test --test-reporter=spec", "node --test tests/a.test.mjs tests/b.test.mjs",
+  "node --no-warnings scripts/measure.mjs", "node scripts/measure.mjs -p", "node scripts/measure.mjs --project --gate 100",
+  "cd scripts", "cd ./scripts", "cd scripts/sub && ls", "printf '%s' hi", "test -f x", "[ -d scripts ]", "[[ -f README.md ]]", "[ -n \"x\" ]",
+  "echo {", "echo }", "echo {a}", "echo '{a,b}'", 'echo "{a,b}"', "{ ls; }", "cat <<< hi", "cat README.m?", "ls scripts/*.mjs", "wc -l tests/*.test.mjs",
+  // round 5: a heredoc body is data, so prose in it is not a command
+  "cat <<'EOF'\nrm -rf x and secrets and $(not run)\nEOF", "cat <<EOF\nplain text with secrets\nEOF", "cat <<-EOF\n\ttabbed text\n\tEOF",
+  'cat <<"EOF"\n$HOME `x`\nEOF', "cat <<EOF | grep x\nplain\nEOF", "grep foo <<'EOF'\nfoo\nEOF", "cat <<EOF\nline one\nline two\nEOF\nls",
 ];
 
 // Commands a read-only agent must not run. Every group is a way past an earlier
@@ -100,6 +110,28 @@ const BLOCK = [
   "cat < .env",
   // quoting that hides the command from a reader
   "c''at x | sh", "echo $'rm'", "$'rm' x", "\"rm\" x", "r\\m x", "echo 'unterminated", "ls \"unterminated",
+  // round 4: brace expansion hides a flag from every flag check
+  "git diff --ext{,}-diff", "git log --out{put,}=/tmp/o", "git ls-remote --upload-pack{,}='touch x' .", "sort -{o,u} x", "echo {a,b}", "echo x{1..3}",
+  "ls {a..c}", "cat .en{v,x}", "ls {a,b}/x", "cat {.env,README.md}", "git diff --{ext,no}-diff",
+  // round 4: a secrets path behind a glued redirect, a glued flag or a glob
+  "cat <.env", "cat 0<.env", "cat <<<.env", "grep -f.env x", "grep --file=.env x", "cat <.env.local", "cat <secrets/key", "sort -T.env x",
+  // (globs that need real files to match are in the temp-directory tests below)
+  "cat *.pem", "cat /proc/*/environ", "cat **/*.mjs", "cat sub/**",
+  // round 4: node flags are an allowlist
+  "node --test --test-reporter-destination=/tmp/o", "node --test-update-snapshots --test", "node --watch scripts/measure.mjs", "node --inspect-brk scripts/measure.mjs",
+  "node --max-old-space-size=1 scripts/measure.mjs", "node --no-deprecation scripts/measure.mjs", "node --require ./x scripts/measure.mjs", "node --experimental-vm-modules scripts/a.mjs",
+  "node -- scripts/measure.mjs", "node --test -- tests/a.test.mjs", "node --test --import=./x", "node --test --experimental-test-coverage", "node --stack-size=1 scripts/a.mjs",
+  // round 4: builtins that assign a variable or evaluate an expression, and cd
+  "printf -v PATH /tmp/evil", "printf -vX x", "test -v x", "[ -v x ]", "[[ -v x ]]", "test -R x", "[[ a == [ab]* ]]", "[ -f a[0] ]", "[[ -v a[0] ]]",
+  "cd /", "cd /tmp", "cd ~", "cd", "cd ..", "cd ../x", "cd scripts/../..", "cd -", "cd a b", "cd -P /tmp", "cd /tmp && ls",
+  // round 5: git after a cd reads another directory's config
+  "cd scripts && git status", "cd sub; git log", "cd scripts\ngit diff",
+  // round 5: a heredoc body is expanded unless its delimiter is quoted, and a fake marker hides nothing
+  "cat <<EOF\ncost $5\nEOF", "cat <<EOF\n`id`\nEOF", "cat <<EOF >out\nx\nEOF", "cat <<EOF; rm y\nbody\nEOF", "cat <<EOF\nx\nEOF\nrm y",
+  "echo '<<EOF'\nrm x\nEOF", 'echo "<<EOF"\nrm x\nEOF', "echo $((1<<EOF))\nrm x\nEOF", "echo a <<<b\nrm x", "cat <<EOF\n$(rm x)\nEOF",
+  "bash <<'EOF'\nls\nEOF", "python3 - <<'EOF'\nprint(1)\nEOF", "node - <<'EOF'\nx\nEOF", "git commit -F - <<'EOF'\nmsg\nEOF",
+  // a tab-stripped terminator ends the body, so what follows it is a command again
+  "cat <<-EOF\n\ttext\n\tEOF\nrm y",
 ];
 
 for (const command of ALLOW) {
@@ -155,4 +187,77 @@ test("a malformed payload does not crash the hook into a block", () => {
     const status = spawnSync("node", [HOOK], { input, encoding: "utf8" }).status;
     assert.equal(status, 0, JSON.stringify(input));
   }
+});
+
+// Globs are expanded where the command runs, so what they match decides whether
+// they name a secrets path. These need real files.
+function withSecretsDir(fn) {
+  const dir = mkdtempSync(join(tmpdir(), "guard-glob-"));
+  try {
+    mkdirSync(join(dir, "secrets"));
+    mkdirSync(join(dir, "sub"));
+    for (const f of [".env", ".env.local", "id_rsa", "key.pem", "secrets/k", "README.md", "sub/a.mjs"]) {
+      writeFileSync(join(dir, f), "x");
+    }
+    fn(dir);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+}
+
+test("a glob that matches a secrets path is refused where it expands", () => {
+  withSecretsDir((cwd) => {
+    for (const command of ["cat .e*", "cat .en?", "cat .[e]nv", "cat .env*", "cat .*", "ls *", "cat *.pem", "cat id_*", "cat sec*/k", "cat ./.e*"]) {
+      assert.equal(classifyBashCommand(command, { cwd }).blocked, true, command);
+    }
+    for (const command of ["cat README.md", "cat sub/*.mjs", "ls sub/*", "grep foo README.m?", 'cat "*"', "cat 'sub/*'"]) {
+      assert.equal(classifyBashCommand(command, { cwd }).blocked, false, command);
+    }
+  });
+});
+
+test("a glob that matches a file named like an option is refused", () => {
+  // `git log *` with a file called `--output=poc` in the directory would run
+  // `git log --output=poc`. File names may start with a dash.
+  const dir = mkdtempSync(join(tmpdir(), "guard-dash-"));
+  try {
+    writeFileSync(join(dir, "README.md"), "x");
+    assert.equal(classifyBashCommand("git log *", { cwd: dir }).blocked, false, "no dashed name yet");
+    writeFileSync(join(dir, "--output=poc"), "x");
+    writeFileSync(join(dir, "-n"), "x");
+    for (const command of ["git log *", "ls *", "sort *", "cat -- *", "cat -*", "git diff --*"]) {
+      assert.equal(classifyBashCommand(command, { cwd: dir }).blocked, true, command);
+    }
+    assert.match(classifyBashCommand("git log *", { cwd: dir }).reason ?? "", /read as an option/);
+    assert.equal(classifyBashCommand("cat README.md", { cwd: dir }).blocked, false, "no glob");
+    assert.equal(classifyBashCommand("cat 'README.*'", { cwd: dir }).blocked, false, "a quoted glob is not expanded");
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("a glob after a cd is refused, since it expands somewhere else", () => {
+  // The root is clean and only sub/ holds a dotenv file, so `.e*` matches nothing
+  // where the guard looks and `.env` where the shell will look after the cd.
+  const dir = mkdtempSync(join(tmpdir(), "guard-cd-"));
+  try {
+    mkdirSync(join(dir, "sub"));
+    writeFileSync(join(dir, "README.md"), "x");
+    writeFileSync(join(dir, "sub", ".env"), "x");
+    assert.equal(classifyBashCommand("cat .e*", { cwd: dir }).blocked, false, "clean root, no cd");
+    assert.equal(classifyBashCommand("cd sub && cat .e*", { cwd: dir }).blocked, true);
+    assert.equal(classifyBashCommand("cd sub; cat .e*", { cwd: dir }).blocked, true);
+    assert.match(classifyBashCommand("cd sub && cat .e*", { cwd: dir }).reason ?? "", /after a cd/);
+    assert.equal(classifyBashCommand("cd sub && cat a.mjs", { cwd: dir }).blocked, false);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("the hook expands globs in the payload's cwd, not its own", () => {
+  withSecretsDir((cwd) => {
+    const payload = (command, dir) => bash(command, { agent_type: "code-reviewer", cwd: dir });
+    assert.equal(run(payload("cat .e*", cwd)), 2, "a dotenv file in the payload cwd");
+    assert.equal(run(payload("cat .e*", join(cwd, "sub"))), 0, "no match in a clean cwd");
+  });
 });

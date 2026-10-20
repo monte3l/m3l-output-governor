@@ -39,7 +39,7 @@
  * leave the repository. The `main` ruleset and CI stay the real backstops.
  */
 import process from "node:process";
-import { existsSync, readdirSync, readFileSync, realpathSync } from "node:fs";
+import { existsSync, globSync, readdirSync, readFileSync, realpathSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 import { WRITER_SPOKES } from "./lib/agent-roster.mjs";
@@ -425,13 +425,12 @@ const GIT_CONFIG_WRITE = new Set([
 ]);
 
 /**
- * A write redirection to anything but a discard target, as a verdict, else
- * undefined.
+ * Every write redirection in a segment to anything but a discard target.
  *
  * @param {string} segment
- * @returns {Blocked | undefined}
+ * @returns {{ operator: string, target: string }[]}
  */
-function redirectVerdict(segment) {
+function redirectWrites(segment) {
   // Write-redirection to a real file (not a discard target). No digit
   // lookbehind: `1>file`/`2>file` are ordinary fd-prefixed writes, not fd
   // duplication -- `2>&1` is excluded below as a `>&` operator whose target
@@ -471,17 +470,29 @@ function redirectVerdict(segment) {
   // (`>&2`, `2>&1`, `>&-`); any other word is a FILE both stdout and stderr
   // are written to (`>&out.txt`, `>& out.txt`), so that form is matched as
   // its own operator and its target examined like any other.
+  const writes = [];
   for (const redirect of scan.matchAll(/(>&|>{1,2}\|?)\s*([^\s&|;]+)/g)) {
     const target = redirect[2].replace(/^["']|["']$/g, "");
     if (redirect[1] === ">&" && /^(?:\d+|-)$/.test(target)) continue;
     if (!/^(\/dev\/null|nul)$/i.test(target)) {
-      return {
-        blocked: true,
-        reason: `writes to "${redirect[2]}" via shell redirection ("${redirect[0]}")`,
-      };
+      writes.push({ operator: redirect[0], target: redirect[2] });
     }
   }
-  return undefined;
+  return writes;
+}
+
+/**
+ * A write redirection to anything but a discard target, as a verdict, else
+ * undefined.
+ *
+ * @param {string} segment
+ * @returns {Blocked | undefined}
+ */
+function redirectVerdict(segment) {
+  const [first] = redirectWrites(segment);
+  return first === undefined
+    ? undefined
+    : block(`writes to "${first.target}" via shell redirection ("${first.operator}")`);
 }
 
 /** @typedef {{ blocked: true, reason: string }} Blocked */
@@ -564,6 +575,16 @@ function expansionReason(segment) {
       continue;
     }
     if (c === "`") return "uses command substitution (a backtick)";
+    // Brace expansion (`{a,b}`, `{1..3}`) turns one word into several after this
+    // guard has read it, so `git diff --ext{,}-diff` would pass every flag check.
+    // A brace group opener is followed by whitespace; an expansion is not.
+    if (c === "{" && !double && segment[i + 1] !== undefined && !/\s/.test(segment[i + 1])) {
+      let j = i + 1;
+      while (j < segment.length && !/\s/.test(segment[j]) && segment[j] !== "}") j++;
+      if (segment[j] === "}" && /,|\.\./.test(segment.slice(i + 1, j))) {
+        return "uses brace expansion, which changes the words after they are read";
+      }
+    }
     if (c === "$" && /[A-Za-z0-9_{(\[@*#!$?-]/.test(segment[i + 1] ?? "")) {
       return "expands a variable or runs a command substitution ($)";
     }
@@ -581,7 +602,11 @@ const SYSTEM_BIN =
 
 // Paths a read-only agent has no business reading: dotenv files (not the
 // `.env.example` kind), key files and the directories credentials live in. The
-// `permissions.deny` Read rules cover the Read tool only, not Bash.
+// `permissions.deny` Read rules reach the Read tool, the file commands Claude Code
+// recognises in Bash (`cat`, `head`, `tail`, `sed`, `tee`) and redirection targets,
+// but not a command that reads without naming the file (`grep -r x .`) or an
+// arbitrary subprocess (https://code.claude.com/docs/en/permissions, "Read and Edit
+// deny rules"). The verb allowlist, not the deny rule, keeps an agent out of these.
 const SECRET_DIRS = new Set(["secrets", ".ssh", ".aws", ".gnupg", ".oci", ".kube"]);
 const SECRET_FILES =
   /^(?:\.env(?:\..+)?|\.npmrc|\.netrc|\.claude\.json|\.credentials\.json|id_rsa|id_ed25519|id_ecdsa|credentials|.+\.(?:pem|key|p12|pfx))$/;
@@ -591,11 +616,17 @@ const PUBLIC_ENV = /^\.env\.(?:example|sample|template|dist)$/;
  * @param {string} token
  * @returns {boolean}
  */
-function isSecretPath(token) {
-  const candidates = token.includes("=")
-    ? [token, token.slice(token.indexOf("=") + 1)]
-    : [token];
-  return candidates.some((candidate) => {
+export function isSecretPath(token) {
+  // A word can carry a path behind a glued operator or flag: `<.env`, `0<.env`,
+  // `--file=.env`, `-f.env`. Check the word and each of those stripped forms.
+  const stripped = token.replace(/^[0-9]*[<>]+&?/, "");
+  const candidates = new Set([
+    token,
+    stripped,
+    stripped.replace(/^-[A-Za-z]/, ""),
+    stripped.slice(stripped.indexOf("=") + 1),
+  ]);
+  return [...candidates].some((candidate) => {
     // `:` splits git's `REV:path` form (`HEAD:.env`) the way `/` splits a path.
     const parts = candidate.split(/[/\\:]/);
     const base = parts[parts.length - 1];
@@ -608,6 +639,83 @@ function isSecretPath(token) {
       parts.slice(0, -1).some((p) => SECRET_DIRS.has(p))
     );
   });
+}
+
+/**
+ * Whether a raw word holds a glob character (`*`, `?`, `[`) outside quotes and
+ * escapes, which the shell expands to file names before the command sees them.
+ *
+ * @param {string} raw
+ * @returns {boolean}
+ */
+function hasUnquotedGlob(raw) {
+  let single = false;
+  let double = false;
+  for (let i = 0; i < raw.length; i++) {
+    const c = raw[i];
+    if (single) {
+      if (c === "'") single = false;
+    } else if (c === "\\") {
+      i++;
+    } else if (c === "'" && !double) {
+      single = true;
+    } else if (c === '"') {
+      double = !double;
+    } else if (!double && (c === "*" || c === "?" || c === "[")) {
+      return true;
+    }
+  }
+  return false;
+}
+
+/**
+ * The names a glob matches under `cwd`, expanded the way bash does with dotglob
+ * off (`*` skips dotfiles, `.e*` does not), or undefined when it cannot be
+ * expanded. `cat .e*` is `cat .env` and `cat *` is `cat id_rsa` when that file
+ * exists, so what a glob matches decides whether it names a secrets path.
+ *
+ * @param {string} pattern
+ * @param {string} cwd
+ * @returns {string[] | undefined}
+ */
+function expandGlob(pattern, cwd) {
+  try {
+    return globSync(pattern, { cwd });
+  } catch {
+    return undefined;
+  }
+}
+
+/**
+ * Why an unquoted glob word is a problem, or undefined. Strict mode (the
+ * read-only guard) also refuses a glob it cannot expand: after a `cd`, a
+ * recursive `**`, or one that fails. Lenient mode (the main session, which is not
+ * held to a read-only list) objects only when it can show a match on a secrets path.
+ *
+ * @param {Word} word
+ * @param {{ cwd: string, afterCd: boolean }} context
+ * @param {boolean} strict
+ * @returns {string | undefined}
+ */
+function globProblem(word, context, strict) {
+  if (word.value === undefined || !hasUnquotedGlob(word.raw)) return undefined;
+  const pattern = word.value;
+  if (context.afterCd || pattern.includes("**")) {
+    if (!strict) return undefined;
+    return context.afterCd
+      ? "uses a glob after a cd, which cannot be expanded here"
+      : "uses a recursive glob (**), which this guard does not expand";
+  }
+  const matches = expandGlob(pattern, context.cwd);
+  if (matches === undefined) return strict ? `uses a glob (${pattern}) that cannot be expanded` : undefined;
+  // A file named `--output=x` or `-n` is a legal name: the shell would hand it to
+  // the command as an option. Claude Code's own read-only check prompts on this too.
+  const option = matches.find((m) => m.startsWith("-"));
+  if (strict && option !== undefined) {
+    return `uses a glob that matches ${option}, a file name the command would read as an option`;
+  }
+  const hit = matches.find(isSecretPath);
+  return hit === undefined ? undefined : `uses a glob that matches a secrets path (${hit})`;
 }
 
 /**
@@ -631,11 +739,11 @@ function matchesLongOption(token, names) {
 // is the point: a denylist has to name every way to run something, an
 // allowlist does not. Extend it deliberately, one verb at a time.
 const READ_ONLY_VERBS = new Set([
-  "ls", "cat", "head", "tail", "wc", "stat", "du", "df", "pwd", "cd",
+  "ls", "cat", "head", "tail", "wc", "stat", "du", "df", "pwd",
   "basename", "dirname", "realpath", "readlink",
   "grep", "egrep", "fgrep", "nl", "cut", "tr", "comm", "cmp", "diff",
   "od", "hexdump", "strings", "md5sum", "shasum", "cksum", "column", "tac", "rev", "fold",
-  "echo", "printf", "true", "false", "test", "[", "[[", "sleep", "seq",
+  "echo", "true", "false", "sleep", "seq",
   "whoami", "uname", "which", "type",
 ]);
 
@@ -710,12 +818,15 @@ function gitRule(args) {
   return undefined;
 }
 
-// node options that run code given on the command line or load a module or
-// debugger before the script does. A script still runs repository code (that
-// is how `node --test` and the docs check work), which no flag check can make
-// read-only; a script path outside the repository is refused.
-const NODE_UNSAFE =
-  /^(?:-e|-p|-pe|-ep|-r|--eval|--print|--require|--import|--loader|--experimental-loader|--input-type|--inspect(?:-brk|-wait|-port)?|--env-file|--env-file-if-exists|--run)(?:=|$)/;
+// The only node flags a read-only agent needs: run the test runner, syntax-check
+// a file, print a version. Every other flag is refused, because a flag can load a
+// module, run code, open a debugger, read an env file or write a report. A
+// script still runs repository code (that is how `node --test` and the docs
+// check work), which no flag check can make read-only, and a script path outside
+// the repository is refused.
+const NODE_FLAG_OK =
+  /^(?:--test|--test-only|--test-name-pattern(?:=.*)?|--test-skip-pattern(?:=.*)?|--test-concurrency=\d+|--test-timeout=\d+|--test-reporter=(?:spec|tap|dot)|--check|-c|--version|-v|--help|-h|--no-warnings|--trace-warnings)$/;
+const NODE_MODE_FLAG = /^(?:--test|--check|-c|--version|-v|--help|-h)$/;
 
 /** @param {string[]} args @returns {string | undefined} */
 function nodeRule(args) {
@@ -723,16 +834,19 @@ function nodeRule(args) {
   let testMode = false;
   let positional = 0;
   for (const a of args) {
-    if (NODE_UNSAFE.test(a)) return `with ${a}, which runs code from the command line or loads a module`;
     if (a === "-") return "with -, which reads a program from standard input";
     if (a.startsWith("-")) {
-      if (/^(?:--test(?:-.*)?|--check|-c|--version|-v|--help|-h)$/.test(a)) mode = true;
-      if (/^--test(?:-.*)?$/.test(a)) testMode = true;
+      // After the script, a flag belongs to the script, not to node (unless the
+      // test runner is on, where every word is read as a test file or option).
+      if (positional > 0 && !testMode) continue;
+      if (!NODE_FLAG_OK.test(a)) return `with ${a}, a node option this guard does not allow`;
+      if (NODE_MODE_FLAG.test(a)) mode = true;
+      if (a === "--test") testMode = true;
       continue;
     }
     positional++;
-    // The first positional is the script; with --test every positional is a test file.
-    // A script's own arguments (`measure.mjs /some/transcripts`) are its business.
+    // The first positional is the script; with --test every positional is a test
+    // file. A script's own arguments (`measure.mjs /some/transcripts`) are its business.
     if (
       (positional === 1 || testMode) &&
       (a.startsWith("/") || a.startsWith("~") || a.split("/").includes(".."))
@@ -776,9 +890,32 @@ const FIND_UNSAFE = new Set([
   "-exec", "-execdir", "-ok", "-okdir", "-delete", "-fprint", "-fprint0", "-fprintf", "-fls",
 ]);
 
+/**
+ * `test`, `[` and `[[`: `-v` and `-R` test a variable and a subscript such as
+ * `a[x]` is evaluated as arithmetic, which can assign or run something.
+ *
+ * @param {string[]} args
+ * @returns {string | undefined}
+ */
+function testRule(args) {
+  const bad = args.find((a) => a === "-v" || a === "-R" || a.includes("["));
+  return bad === undefined ? undefined : `with ${bad}, which can assign a variable or evaluate an expression`;
+}
+
 /** @type {Map<string, (args: string[]) => string | undefined>} */
 const VERB_RULES = new Map([
   ["git", gitRule],
+  ["test", testRule],
+  ["[", testRule],
+  ["[[", testRule],
+  ["printf", (args) => (args.some((a) => /^-v/.test(a)) ? "with -v, which assigns a shell variable" : undefined)],
+  [
+    "cd",
+    (args) =>
+      args.length === 1 && !/^[/~-]/.test(args[0]) && !args[0].split("/").includes("..")
+        ? undefined
+        : "outside the repository, or with no single relative directory",
+  ],
   ["node", nodeRule],
   ["sed", sedRule],
   [
@@ -838,9 +975,11 @@ const VERB_RULES = new Map([
  *
  * @param {Word[]} list the words left once the segment's leading reserved
  *   words are dropped (see commandWords)
+ * @param {{ cwd: string, afterCd: boolean }} context where relative paths and
+ *   globs resolve, and whether an earlier segment changed directory
  * @returns {Blocked | undefined}
  */
-function classifyWords(list) {
+function classifyWords(list, context) {
   if (list.length === 0) return undefined;
   // A leading shell assignment is refused even on its own: `PATH=/tmp/x` changes which
   // program every later segment runs, and `FOO=1 cmd` hands cmd a variable.
@@ -860,9 +999,18 @@ function classifyWords(list) {
     return block("has an argument whose quoting could not be read");
   }
   const verb = baseName(name);
+  // git reads the config of the repository it runs in, and `core.fsmonitor` or a
+  // hook there can name a program. After a cd that is not necessarily this one.
+  if (verb === "git" && context.afterCd) {
+    return block("runs git after a cd, where another repository's config could run a program");
+  }
   const tokens = list.slice(1).map((w) => /** @type {string} */ (w.value));
   const secret = tokens.find(isSecretPath);
   if (secret !== undefined) return block(`names a secrets path (${secret})`);
+  for (const word of list.slice(1)) {
+    const problem = globProblem(word, context, true);
+    if (problem !== undefined) return block(problem);
+  }
   const rule = VERB_RULES.get(verb);
   if (rule === undefined && !READ_ONLY_VERBS.has(verb)) {
     return block(`runs "${verb}", which is not on the read-only command list`);
@@ -872,28 +1020,218 @@ function classifyWords(list) {
 }
 
 /**
+ * Split a command into the text the shell parses as commands and the heredoc
+ * bodies it feeds them as data. A body is not a sequence of commands: a commit
+ * message that says "secrets" must not read as a command naming a secrets path.
+ * But a body whose delimiter is not quoted is still expanded, so `$(...)` inside it
+ * runs; the caller checks those bodies for expansion.
+ *
+ * Stripping hides text from the guards, so it errs towards stripping less. A `<<`
+ * counts only outside quotes and escapes, not as `<<<`, not on a line holding `((`
+ * (arithmetic: `$((1<<EOF))`), and only before a plain word delimiter. An
+ * unterminated body runs to the end of the command, as in bash.
+ *
+ * @param {string} command
+ * @returns {{ code: string, bodies: { text: string, quoted: boolean }[] }}
+ */
+export function stripHeredocs(command) {
+  let code = "";
+  const bodies = [];
+  let single = false;
+  let double = false;
+  /** @type {{ delim: string, quoted: boolean, stripTabs: boolean }[]} */
+  let pending = [];
+  let lineStart = 0;
+  let i = 0;
+  while (i < command.length) {
+    const c = command[i];
+    if (single) {
+      code += c;
+      if (c === "'") single = false;
+      i++;
+      continue;
+    }
+    if (c === "\\") {
+      code += c + (command[i + 1] ?? "");
+      i += 2;
+      continue;
+    }
+    if (c === "'" && !double) {
+      single = true;
+      code += c;
+      i++;
+      continue;
+    }
+    if (c === '"') {
+      double = !double;
+      code += c;
+      i++;
+      continue;
+    }
+    if (c === "\n" && !double) {
+      code += c;
+      i++;
+      lineStart = i;
+      // The bodies of the heredocs opened on the line just ended start here.
+      for (const h of pending) {
+        const lines = [];
+        while (i < command.length) {
+          const end = command.indexOf("\n", i);
+          const line = command.slice(i, end === -1 ? command.length : end);
+          i = end === -1 ? command.length : end + 1;
+          if ((h.stripTabs ? line.replace(/^\t+/, "") : line) === h.delim) break;
+          lines.push(line);
+        }
+        bodies.push({ text: lines.join("\n"), quoted: h.quoted });
+      }
+      if (pending.length > 0) lineStart = i;
+      pending = [];
+      continue;
+    }
+    if (c === "\n") lineStart = i + 1;
+    if (!double && c === "<" && command[i + 1] === "<") {
+      if (command[i + 2] === "<") {
+        code += "<<<";
+        i += 3;
+        continue;
+      }
+      let j = i + 2;
+      const stripTabs = command[j] === "-";
+      if (stripTabs) j++;
+      while (command[j] === " " || command[j] === "\t") j++;
+      let delim = "";
+      let quoted = false;
+      let valid = false;
+      const q = command[j];
+      if (q === "'" || q === '"') {
+        const close = command.indexOf(q, j + 1);
+        if (close !== -1) {
+          delim = command.slice(j + 1, close);
+          quoted = true;
+          valid = /^[A-Za-z_][A-Za-z0-9_]*$/.test(delim);
+          j = close + 1;
+        }
+      } else {
+        const m = /^\\?[A-Za-z_](?:[A-Za-z0-9_]|\\)*/.exec(command.slice(j));
+        if (m !== null) {
+          quoted = m[0].includes("\\");
+          delim = m[0].replaceAll("\\", "");
+          valid = true;
+          j += m[0].length;
+        }
+      }
+      if (valid && !command.slice(lineStart, i).includes("((")) {
+        pending.push({ delim, quoted, stripTabs });
+        code += command.slice(i, j);
+        i = j;
+        continue;
+      }
+    }
+    code += c;
+    i++;
+  }
+  return { code, bodies };
+}
+
+/**
  * Classify a shell command as blocked or allowed for a read-only spoke. An
  * allowlist: a command passes only if every segment expands nothing, redirects
  * only to a discard target, and runs a verb on READ_ONLY_VERBS (or in
  * VERB_RULES, with flags that pass its rule).
  *
  * @param {string} command
+ * @param {{ cwd?: string }} [options] `cwd` is where a glob expands; it
+ *   defaults to this process's own directory
  * @returns {{ blocked: boolean, reason?: string }}
  */
-export function classifyBashCommand(command) {
+export function classifyBashCommand(command, options = {}) {
   if (typeof command !== "string" || command.trim().length === 0) {
     return { blocked: false };
   }
-  for (const segment of segments(command)) {
+  const context = { cwd: options.cwd ?? process.cwd(), afterCd: false };
+  const { code, bodies } = stripHeredocs(command);
+  for (const body of bodies) {
+    const expansion = body.quoted ? undefined : expansionReason(body.text);
+    if (expansion !== undefined) return block(`has a heredoc body that ${expansion}`);
+  }
+  for (const segment of segments(code)) {
     if (segment.length === 0) continue;
     const expansion = expansionReason(segment);
     if (expansion !== undefined) return block(expansion);
     const redirect = redirectVerdict(segment);
     if (redirect !== undefined) return redirect;
-    const verdict = classifyWords(commandWords(words(segment).map(toWord)));
+    const list = commandWords(words(segment).map(toWord));
+    const verdict = classifyWords(list, context);
     if (verdict !== undefined) return verdict;
+    if (list.length > 0 && baseName(list[0].value ?? "") === "cd") context.afterCd = true;
   }
   return { blocked: false };
+}
+
+/**
+ * The verb and unquoted arguments of each segment of `command`, for a hook that
+ * needs to see what a command names without judging whether it is read-only.
+ * A segment whose verb cannot be read is left out.
+ *
+ * @param {string} command
+ * @returns {{ verb: string, tokens: string[], words: Word[] }[]}
+ */
+export function bashCommands(command) {
+  const out = [];
+  for (const segment of segments(stripHeredocs(command).code)) {
+    if (segment.length === 0) continue;
+    const list = commandWords(words(segment).map(toWord));
+    if (list.length === 0 || list[0].value === undefined) continue;
+    out.push({
+      verb: baseName(list[0].value),
+      tokens: list.slice(1).map((w) => w.value ?? w.raw),
+      words: list.slice(1),
+    });
+  }
+  return out;
+}
+
+/**
+ * The secrets paths `command` names, each with the verb that names it: literally,
+ * through a write redirection (verb `(redirect)`), or through a glob that matches
+ * one where the command runs. For a caller that is not restricted to a read-only
+ * list, so a glob it cannot expand is let through (see globProblem).
+ *
+ * @param {string} command
+ * @param {string} [cwd] where globs expand; defaults to this process's directory
+ * @returns {{ verb: string, path: string }[]}
+ */
+export function secretPathsNamed(command, cwd = process.cwd()) {
+  const found = [];
+  for (const target of redirectTargets(command)) {
+    if (isSecretPath(target)) found.push({ verb: "(redirect)", path: target });
+  }
+  const context = { cwd, afterCd: false };
+  for (const { verb, words: args } of bashCommands(command)) {
+    for (const word of args) {
+      const value = word.value ?? word.raw;
+      if (isSecretPath(value)) found.push({ verb, path: value });
+      else {
+        const problem = globProblem(word, context, false);
+        if (problem !== undefined) found.push({ verb, path: problem });
+      }
+    }
+    if (verb === "cd") context.afterCd = true;
+  }
+  return found;
+}
+
+/**
+ * Every file a segment of `command` redirects output to, discard targets
+ * excluded.
+ *
+ * @param {string} command
+ * @returns {string[]}
+ */
+export function redirectTargets(command) {
+  return segments(stripHeredocs(command).code).flatMap((segment) =>
+    redirectWrites(segment).map((w) => w.target.replace(/^["']|["']$/g, "")),
+  );
 }
 
 // Deliberately inlined in every hook rather than shared, so each hook stays
@@ -934,6 +1272,7 @@ if (isEntryPoint()) {
   const command = input.tool_input?.command;
   const verdict = classifyBashCommand(
     typeof command === "string" ? command : "",
+    { cwd: typeof input.cwd === "string" ? input.cwd : undefined },
   );
   if (!verdict.blocked) process.exit(0);
 
