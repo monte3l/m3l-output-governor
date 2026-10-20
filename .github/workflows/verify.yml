@@ -1,14 +1,19 @@
 name: Verify
 
 # What this does: runs this repo's checks on every pull request into `main`
-# and on every push to it. A required check: the org blueprint's `main`
-# ruleset lists `verify`, so keep the job name below.
+# and on every push to it, then reports one aggregated `verify` status for the
+# branch ruleset to gate on. A required check: the org blueprint's `main`
+# ruleset lists `verify`, so keep the job name of the last job below.
 #
-# Claude Code is installed from .github/ci-tools/, whose committed lockfile
-# pins it by integrity hash. Its install script runs (it fetches the native
-# binary), so this job holds read-only permissions and no secrets.
-# `claude plugin validate` runs without an API key. The docs kit's `--check`
-# needs only Node and git. The live eval
+# Lanes are separate jobs, never a matrix, so a failure names its concern:
+# `checks` (tests and the docs kit, no npm packages), `plugin` (Claude Code),
+# `dco`.
+#
+# Only the `plugin` lane installs anything. Claude Code comes from
+# .github/ci-tools/, whose committed lockfile pins it by integrity hash. Its
+# install script runs (it fetches the native binary), so every lane holds
+# read-only permissions and no secrets. `claude plugin validate` runs without
+# an API key. The docs kit's `--check` needs only Node and git. The live eval
 # (`evals/p4.mjs --live`) needs a key and is deliberately never run in CI.
 on:
   push:
@@ -24,8 +29,28 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  verify:
-    name: verify
+  checks:
+    name: Checks
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
+        with:
+          node-version-file: .node-version
+
+      - run: node --test "tests/*.test.mjs"
+
+      # The docs site gate: links, page coverage, design/SHA256SUMS, the local
+      # CSS rule, and scripts/doc-parity.mjs (README and results against the
+      # code and the committed eval runs). Writes nothing.
+      - run: node design/source/docs-kit/build.mjs --check
+
+  plugin:
+    name: Plugin
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
@@ -42,9 +67,97 @@ jobs:
       - run: echo "$PWD/.github/ci-tools/node_modules/.bin" >> "$GITHUB_PATH"
 
       - run: claude plugin validate --strict .
-      - run: node --test "tests/*.test.mjs"
 
-      # The docs site gate: links, page coverage, design/SHA256SUMS, the local
-      # CSS rule, and scripts/doc-parity.mjs (README and results against the
-      # code and the committed eval runs). Writes nothing.
-      - run: node design/source/docs-kit/build.mjs --check
+  # The DCO, enforced by the server and not only by a local hook. Every
+  # non-merge commit a pull request adds must carry a `Signed-off-by: Name
+  # <email>` trailer whose email is the commit's author or committer email, so
+  # it is the contributor's own assertion. It runs for every pull request, and
+  # on a push to `main` it passes without checking: there is no PR range there,
+  # and `verify` needs an explicit `success` from every lane.
+  #
+  # Dependabot is exempt, but only when the pull request was opened by it
+  # (`pull_request.user.login`, which GitHub sets and a commit author field
+  # cannot forge) AND the commit's author name is the same bot. It signs off as
+  # support@github.com, which is not its author email. The range and author
+  # arrive through env, never inline in the script. `--no-divider` matters: a
+  # Dependabot body holds a `---` line, which `git interpret-trailers`
+  # otherwise reads as the end of the message and so finds no trailers at all.
+  # A copy of m3l-groundwork's `dco` lane.
+  dco:
+    name: DCO sign-off
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+      - name: Check every commit in the pull request is signed off
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          PR_AUTHOR: ${{ github.event.pull_request.user.login }}
+        run: |
+          if [ "$EVENT_NAME" != "pull_request" ]; then
+            echo "not a pull request (event: $EVENT_NAME) -- nothing to check"
+            exit 0
+          fi
+          if [ -z "$BASE_SHA" ] || [ -z "$HEAD_SHA" ]; then
+            echo "pull request event without a base or head commit -- failing closed" >&2
+            exit 1
+          fi
+          checked=0
+          bad=0
+          for sha in $(git rev-list --no-merges "${BASE_SHA}..${HEAD_SHA}"); do
+            author="$(git log -1 --format=%an "$sha")"
+            short="$(git log -1 --format='%h %s' "$sha")"
+            if [ "${PR_AUTHOR}|${author}" = "dependabot[bot]|dependabot[bot]" ]; then
+              echo "skip   $short (first-party automation: $author)"
+              continue
+            fi
+            checked=$((checked + 1))
+            author_email="$(git log -1 --format=%ae "$sha" | tr '[:upper:]' '[:lower:]')"
+            committer_email="$(git log -1 --format=%ce "$sha" | tr '[:upper:]' '[:lower:]')"
+            ok=0
+            while IFS= read -r line; do
+              # `Signed-off-by: Name <email>`, exactly one angle-bracketed address.
+              email="$(printf '%s\n' "$line" | sed -nE 's/^Signed-off-by: .+ <([^<>[:space:]]+@[^<>[:space:]]+)>$/\1/p' | tr '[:upper:]' '[:lower:]')"
+              if [ -n "$email" ] && { [ "$email" = "$author_email" ] || [ "$email" = "$committer_email" ]; }; then
+                ok=1
+              fi
+            done < <(git log -1 --format=%B "$sha" | git interpret-trailers --parse --no-divider)
+            if [ "$ok" -eq 1 ]; then
+              echo "ok     $short"
+            else
+              echo "::error title=Missing DCO sign-off::$short has no Signed-off-by trailer matching its author or committer email (git commit -s, or git commit --amend -s --no-edit)"
+              bad=$((bad + 1))
+            fi
+          done
+          echo "checked $checked commit(s), $bad without a valid sign-off"
+          [ "$bad" -eq 0 ]
+
+  # The single required check: one status to protect the branch with, whose
+  # `needs` list is the only place lanes are enumerated.
+  verify:
+    name: verify
+    runs-on: ubuntu-latest
+    needs: [checks, plugin, dco]
+    if: always()
+    timeout-minutes: 5
+    steps:
+      # Testing only for 'failure' is a hole: a lane that was cancelled or
+      # skipped is not a failure, so it would pass and this job would report
+      # green over a run that never finished. Require an explicit success
+      # from every lane instead, so anything else fails closed.
+      - name: Check lane results
+        env:
+          RESULTS: ${{ join(needs.*.result, ' ') }}
+        run: |
+          echo "lane results: $RESULTS"
+          for result in $RESULTS; do
+            if [ "$result" != "success" ]; then
+              echo "A required lane did not succeed: $RESULTS" >&2
+              exit 1
+            fi
+          done
