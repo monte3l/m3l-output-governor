@@ -249,6 +249,15 @@ function words(segment) {
 }
 
 /**
+ * `words` under a name `classifyTokens` can reach: its own `words` local (the
+ * tokenized segment) shadows the function there.
+ *
+ * @param {string} command
+ * @returns {string[]}
+ */
+const splitCommandString = (command) => words(command);
+
+/**
  * The value a shell gives one word (see `words`), with its quoting removed:
  * single quotes are literal, double quotes honor a backslash only before `$`,
  * a backtick, `"`, `\` or a newline, and an unquoted backslash escapes the
@@ -298,7 +307,7 @@ function shellWordValue(word) {
  * them; `raw` is kept for the things quoting itself decides: whether a word is
  * a `VAR=value` assignment, and a nested `-c` payload, which is re-parsed.
  *
- * @typedef {{ raw: string, value: string | undefined, fromEnvSplit?: boolean }} Word
+ * @typedef {{ raw: string, value: string | undefined, fromEnvSplit?: boolean, resplit?: boolean, envRefusal?: string }} Word
  */
 
 /** @param {string} raw @returns {Word} */
@@ -322,6 +331,31 @@ function baseName(token) {
 // hidden behind `sudo rm -rf x`, `env FOO=bar rm x`, or `xargs rm` is never
 // inspected at all, and passes as if it were the harmless prefix alone.
 const PREFIX_VERBS = new Set(["sudo", "env", "xargs", "command"]);
+
+// The options `env` accepts, so its flags can be read as `env` reads them
+// instead of guessed at: a skipped flag that takes a value would turn that
+// value into the command. GNU `env` takes any unique prefix of a long option
+// (`--s` is already `--split-string`). `--block-signal`, `--default-signal`
+// and `--ignore-signal` take a value only through `=`. A letter or option not
+// listed here is refused. Each entry is [name, "none" | "required" | "inline"].
+const ENV_LONG_OPTIONS = [
+  ["ignore-environment", "none"],
+  ["null", "none"],
+  ["debug", "none"],
+  ["list-signal-handling", "none"],
+  ["help", "none"],
+  ["version", "none"],
+  ["unset", "required"],
+  ["chdir", "required"],
+  ["argv0", "required"],
+  ["split-string", "required"],
+  ["block-signal", "inline"],
+  ["default-signal", "inline"],
+  ["ignore-signal", "inline"],
+];
+const ENV_FLAGS_WITHOUT_VALUE = "i0v";
+// `P` is BSD/macOS `env`'s alternate path. `S` is the split string.
+const ENV_FLAGS_WITH_VALUE = "uCPaS";
 
 // A leading `VAR=value` environment assignment; group 1 is the name.
 const ASSIGNMENT = /^([A-Za-z_][A-Za-z0-9_]*)=/;
@@ -394,54 +428,75 @@ function stripPrefixVerbs(input) {
   let i = 0;
   /** The prefix verb whose flags `skipAssignments(true)` is currently skipping. */
   let prefixVerb = "";
+  /** True once `env --` ended its options, so a later `-x` word is the command's. */
+  let envOptionsEnded = false;
   /**
-   * The command string an `env -S`/`--split-string` flag hands to `env`, which
-   * splits it into words and runs it. Kept apart so it can be put back in
-   * front as the real command instead of being skipped as just another flag.
+   * The command string `env -S`/`--split-string` hands to `env`, which splits it
+   * into words and runs it with every word that follows. Kept apart so it is put
+   * back in front as the real command instead of being skipped as a flag.
    *
    * @type {Word | undefined}
    */
   let splitOperand;
   /**
-   * Reads one `env` flag word as `env` itself would and reports the command
-   * string it hands over with `-S`/`--split-string`, or undefined when the
-   * flag is not a split flag. `--split-string` may be abbreviated to any unique
-   * prefix (`--s` is already unique), and `S` may sit anywhere in a short-flag
-   * cluster (`-iS`, `-vS'cmd'`), where it takes the rest of the word, else the
-   * next word. `u`, `C` and `P` take an argument of their own, so a cluster
-   * cannot reach a later `S`.
+   * Why an `env` option could not be read. Set means the whole command is
+   * refused: guessing at an option risks reading a flag's value as the command.
+   *
+   * @type {string | undefined}
+   */
+  let refusal;
+  /**
+   * Reads one flag word of `env` as `env` does. `consumed` is how many words it
+   * takes (the flag and its value), `split` the -S command string, `end` an
+   * `--` that closes the options, `refuse` why the word cannot be read.
    *
    * @param {number} k
-   * @returns {{ operand: Word, consumed: number } | undefined}
+   * @returns {{ consumed: number, split?: Word, end?: boolean, refuse?: string }}
    */
-  const envSplit = (k) => {
+  const envOption = (k) => {
     const flag = text(k);
     const nextWord = k + 1 < words.length ? words[k + 1] : undefined;
-    /** @param {Word} operand @param {number} consumed */
-    const found = (operand, consumed) => ({
-      operand: { ...operand, fromEnvSplit: true },
-      consumed,
-    });
+    /** @param {string} why */
+    const refuse = (why) => ({ consumed: 1, refuse: why });
+    if (flag === "-") return { consumed: 1 };
+    if (flag === "--") return { consumed: 1, end: true };
     if (flag.startsWith("--")) {
       const eq = flag.indexOf("=");
-      const name = eq === -1 ? flag : flag.slice(0, eq);
-      if (name.length < 3 || !"--split-string".startsWith(name)) {
-        return undefined;
+      const name = flag.slice(2, eq === -1 ? undefined : eq);
+      const matches = ENV_LONG_OPTIONS.filter(([n]) => n.startsWith(name));
+      const hit =
+        ENV_LONG_OPTIONS.find(([n]) => n === name) ??
+        (matches.length === 1 ? matches[0] : undefined);
+      if (hit === undefined) return refuse(`the option ${flag}`);
+      const [long, mode] = hit;
+      if (mode === "none") {
+        return eq === -1 ? { consumed: 1 } : refuse(`the option ${flag}`);
       }
-      if (eq !== -1) {
-        return found(toWord(raw(k).slice(raw(k).indexOf("=") + 1)), 1);
-      }
-      return nextWord === undefined ? undefined : found(nextWord, 2);
+      if (mode === "inline") return { consumed: 1 };
+      const value =
+        eq === -1 ? nextWord : toWord(raw(k).slice(raw(k).indexOf("=") + 1));
+      if (value === undefined) return refuse(`the option ${flag} with no value`);
+      const consumed = eq === -1 ? 2 : 1;
+      return long === "split-string" ? { consumed, split: value } : { consumed };
     }
     for (let c = 1; c < flag.length; c++) {
-      if ("uCP".includes(flag[c])) return undefined;
-      if (flag[c] !== "S") continue;
-      if (c + 1 < flag.length) {
-        return found(toWord(raw(k).slice(raw(k).indexOf("S", 1) + 1)), 1);
+      const letter = flag[c];
+      if (ENV_FLAGS_WITHOUT_VALUE.includes(letter)) continue;
+      if (!ENV_FLAGS_WITH_VALUE.includes(letter)) {
+        return refuse(`the option -${letter}`);
       }
-      return nextWord === undefined ? undefined : found(nextWord, 2);
+      // The letter takes the rest of the word as its value, else the next word.
+      const glued = c + 1 < flag.length;
+      const value = glued
+        ? toWord(raw(k).slice(raw(k).indexOf(letter, 1) + 1))
+        : nextWord;
+      if (value === undefined) {
+        return refuse(`the option -${letter} with no value`);
+      }
+      const consumed = glued ? 1 : 2;
+      return letter === "S" ? { consumed, split: value } : { consumed };
     }
-    return undefined;
+    return { consumed: 1 };
   };
   const skipAssignments = (allowFlags) => {
     while (i < words.length) {
@@ -452,13 +507,22 @@ function stripPrefixVerbs(input) {
           words.map((w) => w.raw),
           i,
         );
-      } else if (allowFlags && text(i).startsWith("-")) {
-        const split = prefixVerb === "env" ? envSplit(i) : undefined;
-        if (split === undefined) {
+      } else if (allowFlags && !envOptionsEnded && text(i).startsWith("-")) {
+        if (prefixVerb !== "env") {
           i++;
-        } else {
-          splitOperand = split.operand;
-          i += split.consumed;
+          continue;
+        }
+        const option = envOption(i);
+        if (option.refuse !== undefined) {
+          refusal = option.refuse;
+          i = words.length;
+          return;
+        }
+        i += option.consumed;
+        if (option.end === true) envOptionsEnded = true;
+        if (option.split !== undefined) {
+          splitOperand = { ...option.split, fromEnvSplit: true };
+          return;
         }
       } else {
         return;
@@ -498,10 +562,20 @@ function stripPrefixVerbs(input) {
         break;
       }
       prefixVerb = baseName(text(i));
+      envOptionsEnded = false;
       i++;
       skipAssignments(true);
+      // After an env split string, every remaining word is an argument of the
+      // command it names; after a refusal there is nothing left to read.
+      if (splitOperand !== undefined || refusal !== undefined) break;
     }
     if (i === start) break;
+  }
+  if (refusal !== undefined) {
+    return {
+      words: [{ raw: "env", value: "env", envRefusal: refusal }],
+      assignments,
+    };
   }
   return {
     words:
@@ -1198,6 +1272,12 @@ function classifyTokens(rawWords, inherited = []) {
   const { verb, sub, subIndex, words, tokens } = parsed;
   const assignments = [...inherited, ...parsed.assignments];
   if (tokens.length === 0) return undefined;
+  if (words[0].envRefusal !== undefined) {
+    return {
+      blocked: true,
+      reason: `runs env with ${words[0].envRefusal}, which this guard cannot read`,
+    };
+  }
   const unreadable =
     words[0].value === undefined
       ? words[0]
@@ -1214,25 +1294,29 @@ function classifyTokens(rawWords, inherited = []) {
   }
   if (verb.length === 0) return undefined;
 
-  // `env -S STRING` splits STRING into a command and runs it with the words
-  // that follow, so the whole thing is classified as one command string.
-  // `env` first rewrites `\_`, `\c`, `\t`, `${VAR}` and `#` inside it; the
-  // guard does not, so an operand using them cannot be read and is refused.
-  if (words[0].fromEnvSplit === true) {
-    if (/[\\$]/.test(words[0].value ?? "")) {
+  // A command word holding whitespace is a command string, not a program name:
+  // `env -S 'git -C x' commit` leaves its operand here, and so does a quoted
+  // "a b". Split it with this guard's own tokenizer and classify the result in
+  // front of the words that followed it, kept exactly as they were. `env`
+  // rewrites `\_`, `\c`, `${VAR}` and `#` inside a -S string and this guard
+  // does not, so an operand using them cannot be read and is refused.
+  const first = words[0];
+  if (
+    first.fromEnvSplit === true ||
+    (first.resplit !== true && /\s/.test(first.value))
+  ) {
+    if (first.fromEnvSplit === true && /[\\$]/.test(first.value)) {
       return {
         blocked: true,
         reason:
           "runs an env -S command string with escapes or variables that cannot be resolved here",
       };
     }
-    return classifyNestedCommand("env -S", words);
-  }
-
-  // Any other command word that still holds whitespace once unquoted is a
-  // command string, not a program name. The words after it are its arguments.
-  if (/\s/.test(words[0].value)) {
-    return classifyNestedCommand("a quoted command string", words);
+    const head = splitCommandString(first.value).map((w) => ({
+      ...toWord(w),
+      resplit: true,
+    }));
+    return classifyTokens([...head, ...words.slice(1)], assignments);
   }
 
   if (SHELLS.has(verb)) {

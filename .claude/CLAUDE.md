@@ -100,6 +100,7 @@ not excluded from the eval fixture. Put harness files under `.claude/`, never be
 | `.claude/hooks/guard-git-push-signed.mjs` | Blocks a `git push` that contains unsigned commits. Uses `.claude/hooks/lib/signed-range.mjs` |
 | `.claude/hooks/guard-no-commonjs.mjs`, `guard-secret-writes.mjs`, `guard-double-background.mjs` | Block `require`/`module.exports`, writes of `.env*` or secret-shaped values, and a background command that also detaches itself |
 | `.claude/hooks/guard-readonly-bash.mjs` | Restricts the read-only agents' Bash to non-mutating commands. The roster is `.claude/hooks/lib/agent-roster.mjs` and is empty: no agent here writes |
+| `.claude/tests/guard-readonly-bash.test.mjs` | Regression tests for that guard. Not under `tests/`, where the eval fixture would see a second failing test, and CI does not run it: run `node --test .claude/tests/guard-readonly-bash.test.mjs` after changing the guard |
 | `.claude/hooks/inject-decision-gate.mjs` | Reminds about branch and PR before change work. Advisory, never blocks |
 | `.claude/hooks/write-compact-handoff.mjs`, `reinject-compact-handoff.mjs` | Carry a work summary across a compaction through `tmp/` (gitignored) |
 | `.claude/hooks/statusline.mjs`, `subagent-statusline.mjs`, `statusline-layout.mjs` | The status line and the per-subagent row |
