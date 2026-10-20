@@ -1,0 +1,155 @@
+---
+name: harness-guidance
+description: >-
+  Dual-mode Claude Code harness guidance skill. `research` mode answers a
+  single Claude Code / Anthropic-guidance question from official sources
+  only (anthropic.com, claude.com, code.claude.com, docs.claude.com, the
+  Claude Code CHANGELOG). `refresh` mode sweeps this project's `.claude/` surface — settings, hooks, agents, skills,
+  rules — plus the plugin's shipped `.claude-plugin/` and `skills/` — against a
+  living tracker and produces a remediation plan. Use for
+  /harness-guidance, "what does Anthropic recommend for X", "is our harness
+  up to date with Anthropic", "model pins current". Not how this project's
+  harness is wired today — that's CLAUDE.md and the `.claude/` files
+  themselves.
+---
+
+# harness-guidance
+
+One skill, two modes, sharing one allowlist
+(`references/official-sources.md`) so they can't drift apart. Pick the mode
+by what's actually being asked, not by surface phrasing: a question that
+names one setting, one hook, one agent, or one narrow facet of `.claude/` —
+even when phrased as "is X still current" — stays `research`, because
+there's one thing to look up and answer. A request that names no specific
+facet, that asks about the whole `.claude/` surface ("our harness", "are we
+behind"), or that's periodic/`/customize`-driven, is `refresh`. When
+genuinely torn between the two, default to `research` — it's cheaper and
+faster — and say in the answer that a full `refresh` sweep is available if
+the question turns out to implicate more than the one facet asked about.
+
+**Must only run in the main (hub) agent, never inside a subagent** — it ends
+in `EnterPlanMode` (refresh) or dispatches other agents (either mode), which a
+spoke cannot do: every spoke sets `disallowedTools: Agent`, and Claude Code otherwise
+lets a subagent spawn its own, three layers deep by default
+(`CLAUDE_CODE_MAX_SUBAGENT_SPAWN_DEPTH`).
+
+**No files are written by this skill itself** in research mode by default;
+refresh mode writes to exactly one file, the tracker, in Step 5 (it creates
+`.claude/research/harness-refresh.md` on the first run). `.claude/**` is
+excluded from the P4 eval fixture and the docs-site check, which is why the
+tracker and notes live here and not under `docs/`.
+
+## Authority (read this before either mode)
+
+This skill has authority over this repository's whole Claude Code surface:
+
+- **`.claude/`**: `settings.json` and its hook wiring, every hook, every agent
+  (frontmatter, model tiering, tool grants), every skill, every rule, and
+  `.claude/CLAUDE.md`.
+- **The plugin's own root components**: `.claude-plugin/` (plugin and
+  marketplace manifests) and `skills/`. These ship to users, so a stale field
+  there reaches them, not just this repository's own sessions.
+
+An interview-derived emphasis tells this skill which facet to research
+**most deeply**, never which facets it may or may not touch.
+
+## Research mode
+
+1. **Scope the topic.** Read the topic from the invocation or the
+   surrounding task; at most **one** clarifying question, otherwise infer
+   and proceed. Derive **3–5 orthogonal facets** — one per Explore agent.
+   Derive a kebab-case slug for the optional Step 5 snapshot.
+2. **Fan out.** Read `references/official-sources.md` first, then spawn
+   **all agents in a single message**. Each brief carries: one facet; the
+   allowlist + GitHub caveat pasted verbatim; today's date; "do not stop at
+   the first matching source — fetch every distinct one"; "reject any
+   non-allowlisted domain outright and say so"; "you hold no write tool —
+   findings travel only in your response"; the findings format below; and a
+   ~8,000-character (~2,000-token) return cap. Always `subagent_type:
+"Explore"`, breadth `"very thorough"`.
+
+   Findings format, one block per source:
+
+   ```
+   SOURCE: <URL>
+   CLAIM: <the specific claim, quoted or tightly paraphrased>
+   CONFLICT-WITH: <another SOURCE, if this claim contradicts it — omit if none>
+   ```
+
+3. **Aggregate & synthesize.** Read every agent's full inline findings —
+   digests are for triage, not synthesis. Assign `S1, S2, …` deduping; merge
+   agreement into single consensus points tagged with all supporting ids;
+   flag contradictions — current docs outrank an older blog post; a
+   model-specific guide outranks a general one.
+4. **Ask a clarifying question only if genuinely needed** — only when two
+   current, equally authoritative sources conflict in a way that changes the
+   invoking task.
+5. **Offer an optional snapshot.** Default is inline-only. On explicit
+   confirmation, write `.claude/research/harness/<topic-slug>.md`, assembled
+   from Step 2's findings + Step 3's synthesis (not re-fetched), with a `>
+**Provenance** —` header naming today's date and the sources consulted.
+
+## Refresh mode
+
+1. **Read the tracker & establish anchors.** Read
+   `.claude/research/harness-refresh.md`, its header
+   `<!-- harness-refresh: last-verified=<date> claude-code-version=<version> -->`.
+   Missing tracker/facet → first run, `NEW` only. Then read the allowlist
+   file; state today's date; derive a run directory
+   `<scratchpad>/harness-refresh-<date>/`.
+2. **Build the delta.** `WebFetch` the Claude Code CHANGELOG, extract
+   entries newer than the recorded version. An unreachable source is a
+   coverage gap, not a blocker. With an `unset` tracker there is no recorded
+   version to start from, so the delta has no lower bound: read as far back as
+   the fetch returns, and write the oldest version you actually read into the
+   tracker as a coverage note (`changelog read back to <version>`), never
+   implying full coverage of anything older. Pass this delta into all five briefs below
+   — it is not a sixth facet.
+3. **Fan out five fixed facets in one message** — fixed, not derived per
+   run, so sweeps stay comparable and the tracker stays diffable:
+
+   | Facet id                     | Emitted surface it validates                                         |
+   | ---------------------------- | -------------------------------------------------------------------- |
+   | `models-tiering`             | agent frontmatter `model`/`effort` fields                            |
+   | `cc-features-settings`       | `settings.json` shape, permissions, hook event coverage, `.claude-plugin/` manifests |
+   | `agent-subagent-design`      | the 3 agents (Explore, code-reviewer, silent-failure-hunter), tool grants, `disallowedTools` |
+   | `skills-context-engineering` | the `.claude/skills/` skills and the shipped `skills/measure`, frontmatter, description length |
+   | `hooks-lifecycle`            | the hooks in `.claude/hooks/`, event names, matchers, the exit-code contract |
+
+   Each brief carries: the facet row, Step 2's delta, the tracker's prior
+   claims for that facet, the allowlist + GitHub caveat + date anchor, the
+   facet id, and this verdict format per claim:
+
+   ```
+   CLAIM: <the tracker's prior claim, or "NEW" if none existed>
+   VERDICT: UNCHANGED | CHANGED | GONE
+   NOW: <the current official position>
+   REPO-IMPACT: <which emitted file(s) this affects, or "none">
+   ```
+
+   Return value: **the full verdict list inline, inside the ~8,000-character
+   cap** -- `Explore` holds no write tool, so it cannot write a file. Put
+   every non-"none" REPO-IMPACT claim first so a truncation drops only
+   the no-impact ones. The hub saves each returned report to
+   `<run-dir>/<facet-id>.md` itself; that is what step 4 reads.
+
+4. **Aggregate.** Read every saved facet report in full. Four buckets:
+   confirmed drift with repo impact (verify each against the cited file
+   itself before trusting it — an agent can misread a page), guidance
+   changes with no impact, dead/moved URLs, coverage gaps.
+5. **Update the tracker in place** (not a new dated file) — this skill's
+   only write outside plan mode. Bump the header date + version, update
+   every checked claim's text/URL/date, add `NEW` sources, update the
+   outstanding-drift table.
+6. **`EnterPlanMode`** with a remediation plan, one section per
+   confirmed-drift item. No drift → skip plan mode, report a clean sweep,
+   still update the tracker.
+
+## Why this exists, separately from "how is our harness wired"
+
+Research mode answers "what does Anthropic recommend for X." Nothing else here
+asks the inverse — "is what's already built still what Anthropic currently
+recommends" — because `claude plugin validate --strict .` only checks the
+manifests against the installed Claude Code, never freshness against the
+outside world. A retired model pin or a deprecated hook pattern passes every
+local check; only a live sweep against Anthropic's own current docs surfaces it.

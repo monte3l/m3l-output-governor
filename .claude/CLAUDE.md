@@ -51,6 +51,7 @@ Scripts are plain Node `.mjs`. The README is the user-facing spec.
 | `tests/evals.test.mjs` | Dry run spawns nothing, pairing and summary maths, the fixture, the task checks |
 | `skills/measure/SKILL.md` | The plugin's one skill, `/m3l-output-governor:measure`. It injects `measure.mjs --project` output with the `!` shell syntax and has Claude interpret it. User-invoked only |
 | `.claude-plugin/` | Plugin and marketplace manifests. One skill; no hooks, mods or output styles |
+| `.claude/` | The working harness for this repository: settings, hooks, agents, rules and skills for the people and agents who change it. It is not the plugin's own surface, which stays at the root (`skills/`, `.claude-plugin/`). See "Harness" below |
 | `.github/ci-tools/` | `package.json` and lockfile pinning `@anthropic-ai/claude-code`; the `plugin` lane of `verify.yml` installs it with its install script (an accepted risk, see `SECURITY.md`). Dependabot proposes bumps after a one-day cooldown |
 | `scripts/doc-parity.mjs` | A kit parity module (listed in `docs.config.mjs` `parity`). Compares the README with `measure.mjs` flags, the gate default and the JSON field paths (flattened from `measure()` run on a synthetic transcript), with `p4.mjs` flags, defaults, task count, per-run caps and the dry-run plan, and with the result-row key count. It recomputes the committed `evals/p4-2026-10-19*.jsonl` runs through `summarize.mjs` and asserts every figure in `NUMBER_TABLE` (README Levers, `evals/results.md`, `UNVERIFIED.md` items 14, 17 and 19). It also checks the skill invocation and `disable-model-invocation`. `tests/doc-parity.test.mjs` covers its pure helpers |
 | `docs.config.mjs` | The docs site config: pages, nav groups, `exclude` (each with a reason), the manifest, and the parity module |
@@ -83,6 +84,42 @@ Constraints that are not obvious from one file:
 - **No LLM rewriting of assistant prose, no `MessageDisplay` for savings, no
   editing of earlier turns.** Output tokens are billed when generated, and
   rewriting the past breaks the cached prefix.
+
+## Harness
+
+Everything here lives under `.claude/`, which `evals/p4.mjs` (`EXCLUDED`) and
+`docs.config.mjs` (`exclude`) both leave out, so none of it changes what a live eval
+run sees or fails the docs check. There is no root `bin/`, `docs/` or `CLAUDE.md`: a
+root `CLAUDE.md` fails `claude plugin validate --strict .`, and `bin/` and `docs/` are
+not excluded from the eval fixture. Put harness files under `.claude/`, never beside it.
+
+| Path | What it does |
+| --- | --- |
+| `.claude/settings.json` | Denies reading `.env*` and `secrets/**`, registers the hooks below, sets the status line, and enables the project plugins (each needs one `claude plugin install <id> --scope project`) |
+| `.claude/hooks/guard-branch-isolation.mjs` | Blocks writes to `scripts/`, `evals/`, `tests/`, `skills/` and `.claude-plugin/` while HEAD is `main`. Its path set is `.claude/hooks/lib/protected-paths.mjs` |
+| `.claude/hooks/guard-git-push-signed.mjs` | Blocks a `git push` that contains unsigned commits. Uses `.claude/hooks/lib/signed-range.mjs` |
+| `.claude/hooks/guard-no-commonjs.mjs`, `guard-secret-writes.mjs`, `guard-double-background.mjs` | Block `require`/`module.exports`, writes of `.env*` or secret-shaped values, and a background command that also detaches itself |
+| `.claude/hooks/guard-readonly-bash.mjs` | Restricts the read-only agents' Bash to non-mutating commands. The roster is `.claude/hooks/lib/agent-roster.mjs` and is empty: no agent here writes |
+| `.claude/hooks/inject-decision-gate.mjs` | Reminds about branch and PR before change work. Advisory, never blocks |
+| `.claude/hooks/write-compact-handoff.mjs`, `reinject-compact-handoff.mjs` | Carry a work summary across a compaction through `tmp/` (gitignored) |
+| `.claude/hooks/statusline.mjs`, `subagent-statusline.mjs`, `statusline-layout.mjs` | The status line and the per-subagent row |
+| `.claude/agents/Explore.md`, `code-reviewer.md`, `silent-failure-hunter.md` | Read-only search, diff review and error-handling audit, written against the invariants above |
+| `.claude/rules/tests.md`, `.claude/rules/refactoring.md` | Load when editing `tests/**` and `scripts/**`, `evals/**` |
+| `.claude/skills/writing-commits/`, `creating-prs/`, `starting-work/`, `finishing-work/`, `triaging-ci/` | The commit, PR, branch, close-out and CI-failure workflows, written for the rules below |
+| `.claude/skills/reviewing-dependabot-prs/`, `triaging-scan-alerts/`, `watching-pr-checks/` | `gh`-driven GitHub workflows. All ask before they act |
+| `.claude/skills/harness-guidance/` | Checks this harness against Anthropic's current guidance. Its tracker is `.claude/research/harness-refresh.md` |
+| `.claude/skills/customize/` | The m3l-groundwork bootstrapper's own copy, used once to tailor this harness. **Local only and gitignored**: it ships TypeScript files, and every tracked file ships to plugin users. Re-create it with `npx @monte3l/groundwork .` |
+
+Git workflow, enforced by the hooks above and by the `main` ruleset:
+
+- **Every change goes through a PR**, from a `feat/`, `fix/`, `ci/`, `chore/` or `docs/`
+  branch. `main` rejects direct pushes, needs a code-owner approval from someone other
+  than the author, and is merged with a merge commit, never squashed.
+- **Commit with `git commit -s`** (the `dco` lane of `verify.yml` needs a `Signed-off-by`)
+  and with a signature (the ruleset rejects unsigned commits). Conventional Commits, a
+  lowercase imperative subject, a prose body.
+- **Never force-push, never add a dependency, never hand-edit `design/source/`.**
+- **Never write CommonJS, a secret or an `.env` file**; the hooks refuse them.
 
 ## Docs and style
 
