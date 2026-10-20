@@ -30,10 +30,18 @@ jobs:
           # Permissive licenses only. Add a license here only after checking
           # that this project can accept its terms.
           allow-licenses: MIT, MIT-0, Apache-2.0, BSD-2-Clause, BSD-3-Clause, ISC, 0BSD, CC0-1.0, Unlicense, CC-BY-4.0, BlueOak-1.0.0, Artistic-2.0, CC-BY-3.0
+          # BlueOak-1.0.0, Artistic-2.0 and CC-BY-3.0 cover the dependency tree
+          # of wrangler in .github/deploy-tools. All are permissive; this repo
+          # never redistributes them.
+          #
           # Per-package, not per-license: the pinned Claude Code CLI in
           # .github/ci-tools (verify.yml) and its platform binaries carry
           # Anthropic's proprietary licence ("SEE LICENSE IN ..."). They are
           # only installed in a CI job and never redistributed.
+          # Also per-package: wrangler pulls in sharp's prebuilt libvips
+          # binaries, which carry LGPL-3.0-or-later. They are only installed
+          # (--ignore-scripts) in a CI job that uploads static HTML to
+          # Cloudflare, never shipped to anyone.
           allow-dependencies-licenses: >-
             pkg:npm/%40anthropic-ai/claude-code,
             pkg:npm/%40anthropic-ai/claude-code-darwin-arm64,
@@ -43,4 +51,18 @@ jobs:
             pkg:npm/%40anthropic-ai/claude-code-linux-x64,
             pkg:npm/%40anthropic-ai/claude-code-linux-x64-musl,
             pkg:npm/%40anthropic-ai/claude-code-win32-arm64,
-            pkg:npm/%40anthropic-ai/claude-code-win32-x64
+            pkg:npm/%40anthropic-ai/claude-code-win32-x64,
+            pkg:npm/%40img/sharp-libvips-darwin-arm64,
+            pkg:npm/%40img/sharp-libvips-darwin-x64,
+            pkg:npm/%40img/sharp-libvips-linux-arm,
+            pkg:npm/%40img/sharp-libvips-linux-arm64,
+            pkg:npm/%40img/sharp-libvips-linux-ppc64,
+            pkg:npm/%40img/sharp-libvips-linux-riscv64,
+            pkg:npm/%40img/sharp-libvips-linux-s390x,
+            pkg:npm/%40img/sharp-libvips-linux-x64,
+            pkg:npm/%40img/sharp-libvips-linuxmusl-arm64,
+            pkg:npm/%40img/sharp-libvips-linuxmusl-x64,
+            pkg:npm/%40img/sharp-wasm32,
+            pkg:npm/%40img/sharp-win32-arm64,
+            pkg:npm/%40img/sharp-win32-ia32,
+            pkg:npm/%40img/sharp-win32-x64

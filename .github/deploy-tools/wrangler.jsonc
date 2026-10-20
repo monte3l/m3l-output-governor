@@ -1,0 +1,27 @@
+{
+  "$schema": "./node_modules/wrangler/config-schema.json",
+  // Workers Static Assets, the org standard for a docs site (see the org
+  // .github repo's blueprint/docs-site.md). No "main" script is needed for an
+  // assets-only Worker.
+  "name": "m3l-output-governor-docs",
+  "compatibility_date": "2026-09-27",
+  "assets": {
+    // Resolved relative to this file (.github/deploy-tools/), so it points at
+    // the _site/ directory the workflow's build job writes at the repo root.
+    "directory": "../../_site",
+    "html_handling": "auto-trailing-slash",
+    // The docs kit emits a real 404.html at the site root; without this, a
+    // missing path would silently fall through to index.html.
+    "not_found_handling": "404-page",
+  },
+  "routes": [
+    // A Custom Domain: Cloudflare creates the DNS record and an Advanced
+    // Certificate automatically. The hostname must carry no existing CNAME
+    // record in the zone (blueprint/docs-site.md, one-time setup).
+    { "pattern": "output-governor.monte3l.com", "custom_domain": true },
+  ],
+  // Both false: this is a public repo, and a workers.dev / version preview
+  // URL is public by default with no way to restrict it on the Free plan.
+  "workers_dev": false,
+  "preview_urls": false,
+}

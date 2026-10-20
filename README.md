@@ -123,6 +123,9 @@ effort.
 ```zsh
 node --test "tests/*.test.mjs"                    # unit tests
 claude plugin validate --strict .                 # manifest (CI uses the version pinned in .github/ci-tools)
+node design/source/docs-kit/build.mjs --check     # docs site gate: links, page coverage, design checksums, doc-versus-code parity
+node design/source/docs-kit/build.mjs --out _site # build the docs site locally
+node scripts/doc-parity.mjs                       # only the doc-versus-code parity checks
 node evals/summarize.mjs evals/p4-2026-10-19.jsonl   # reproduce the P4 table, free (also the -run2 and -run3 files)
 node evals/p4.mjs                                 # dry run: prints the plan and a cost estimate
 node evals/p4.mjs --live                          # spends about $5 on the credential claude resolves
@@ -133,7 +136,10 @@ Commits are Conventional Commits, signed, with a `Signed-off-by` trailer
 commit without one.
 
 The live eval compares built-in Concise with the default style on Opus 5.5.
-Results and limits are in [`evals/results.md`](evals/results.md).
+Results and limits are in [`evals/results.md`](evals/results.md). The numbers
+quoted in this README and in `evals/results.md` are recomputed from the committed
+runs by `scripts/doc-parity.mjs`, so a hand-copied figure that drifts fails the
+docs check.
 
 | `evals/p4.mjs` flag | Default | Meaning |
 | --- | --- | --- |
@@ -152,6 +158,9 @@ repeated calls, answer length, pass, error).
 
 ### Project docs
 
+- [Documentation site](https://output-governor.monte3l.com) -- these pages,
+  built from the repository's Markdown. A page is on it only if it is listed in
+  `docs.config.mjs`.
 - [`evals/results.md`](evals/results.md) -- the three recorded Concise-style
   runs and their limits.
 - [`UNVERIFIED.md`](UNVERIFIED.md) -- what was confirmed by a live check, and

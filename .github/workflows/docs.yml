@@ -1,0 +1,129 @@
+name: Docs
+
+# What this does: builds this repo's own docs site with the docs kit
+# (design/source/docs-kit/build.mjs) and deploys it to Cloudflare Workers Static
+# Assets at https://output-governor.monte3l.com, on a Custom Domain
+# (.github/deploy-tools/wrangler.jsonc). Runs on every push to `main` and on
+# manual dispatch, not on every PR: `verify` already runs the kit's `--check`
+# on each PR, and this workflow is what ships the result.
+#
+# Cloudflare has no GitHub OIDC, so the deploy job authenticates with a
+# narrowly scoped API token (Workers Scripts: Edit + Workers Routes: Edit on
+# the monte3l.com zone only), stored as a `docs-cloudflare` environment secret
+# restricted to `main`. The one-time setup is in the org .github repo's
+# blueprint/docs-site.md.
+#
+# After the deploy, the `smoke` job fetches every page, the 404 page and every
+# asset from the live site and requires each to equal the file the `build` job
+# produced, with every header the generated `_headers` file asks for. That
+# catches a deploy that never landed and a Cloudflare zone setting that
+# rewrites the site behind the repo's back. A 403 means a bot-protection
+# setting was switched back on.
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions: {}
+
+concurrency:
+  group: ${{ github.workflow }}
+  # A half-published site is worse than a queued one; let an in-flight
+  # deploy finish rather than cancelling it out from under a viewer.
+  cancel-in-progress: false
+
+jobs:
+  build:
+    name: Build
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
+        with:
+          node-version-file: .node-version
+
+      # Belt and suspenders: `verify`'s `docs` step already gates every PR,
+      # against a `main` the ruleset requires the branch to be up to date
+      # with. `--check` still re-validates the merged result before `--out`
+      # ever writes anything this job would publish, so a path that skips
+      # `verify` (a re-run, a manual dispatch) cannot ship a broken link.
+      - run: node design/source/docs-kit/build.mjs --check
+
+      - run: node design/source/docs-kit/build.mjs --out _site
+
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: docs-site
+          path: _site
+          retention-days: 1
+
+  deploy:
+    name: Deploy
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    environment:
+      name: docs-cloudflare
+      url: https://output-governor.monte3l.com
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
+        with:
+          node-version-file: .node-version
+
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: docs-site
+          path: _site
+
+      # --ignore-scripts is safe here: an assets-only `wrangler deploy` (no
+      # bundling, no `wrangler dev`) needs neither esbuild's nor workerd's
+      # postinstall-fetched binaries -- verified locally before adding this
+      # step. Same pattern as release.yml's `npm ci --ignore-scripts --prefix
+      # tools/release`.
+      - run: npm ci --ignore-scripts --prefix .github/deploy-tools
+
+      - name: Deploy to Cloudflare
+        working-directory: .github/deploy-tools
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          # Opt out of Cloudflare's anonymous usage telemetry for this CI job.
+          WRANGLER_SEND_METRICS: "false"
+        run: node_modules/.bin/wrangler deploy --config wrangler.jsonc
+
+  smoke:
+    name: Smoke test
+    needs: deploy
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
+        with:
+          node-version-file: .node-version
+
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: docs-site
+          path: _site
+
+      # Retries for about a minute by default: a fresh deploy can take a
+      # moment to reach the edge that answers this runner.
+      - run: node design/source/docs-kit/check-live.mjs --site _site

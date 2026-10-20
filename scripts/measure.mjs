@@ -5,7 +5,7 @@ import { homedir } from 'node:os'
 import { join } from 'node:path'
 import { pathToFileURL } from 'node:url'
 
-const DEFAULT_GATE_CHARS = 8000
+export const DEFAULT_GATE_CHARS = 8000
 const CHARS_PER_TOKEN = 4
 
 const textOf = c => (typeof c === 'string' ? c : Array.isArray(c) ? c.map(b => b.text ?? '').join('') : '')
