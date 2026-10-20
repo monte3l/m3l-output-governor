@@ -29,8 +29,16 @@ const parse = file => {
   }
 }
 
-/** Where Claude Code keeps a project's transcripts: the working directory with every non-alphanumeric character as `-`. */
-export const projectDir = (cwd, home = homedir()) => join(home, '.claude', 'projects', cwd.replace(/[^A-Za-z0-9]/g, '-'))
+/**
+ * Where Claude Code keeps a project's transcripts: `projects/` under `CLAUDE_CONFIG_DIR` (default `~/.claude`), in a folder
+ * named after the working directory with every non-alphanumeric character as `-`. `CLAUDE_CODE_PROJECT_DIR_NAME` replaces
+ * that folder name, and Claude Code reads it only when `CLAUDE_CONFIG_DIR` is set too.
+ */
+export const projectDir = (cwd, home = homedir(), env = process.env) => {
+  const config = env.CLAUDE_CONFIG_DIR || join(home, '.claude')
+  const name = (env.CLAUDE_CONFIG_DIR && env.CLAUDE_CODE_PROJECT_DIR_NAME) || cwd.replace(/[^A-Za-z0-9]/g, '-')
+  return join(config, 'projects', name)
+}
 
 const isSubagentFile = file => /[\\/]subagents[\\/]/.test(file)
 

@@ -1,7 +1,7 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { spawnSync } from 'node:child_process'
-import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, realpathSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -83,8 +83,28 @@ test('a directory argument expands to its .jsonl files, sorted, and other argume
 })
 
 test('projectDir maps a working directory to its transcript folder', () => {
-  assert.equal(projectDir('/Users/me/workspaces/monte3l/m3l-output-governor', '/home'), '/home/.claude/projects/-Users-me-workspaces-monte3l-m3l-output-governor')
-  assert.equal(projectDir('/Users/me/.claude/x y', '/home'), '/home/.claude/projects/-Users-me--claude-x-y')
+  assert.equal(projectDir('/Users/me/workspaces/monte3l/m3l-output-governor', '/home', {}), '/home/.claude/projects/-Users-me-workspaces-monte3l-m3l-output-governor')
+  assert.equal(projectDir('/Users/me/.claude/x y', '/home', {}), '/home/.claude/projects/-Users-me--claude-x-y')
+})
+
+test('projectDir follows CLAUDE_CONFIG_DIR, and CLAUDE_CODE_PROJECT_DIR_NAME only together with it', () => {
+  assert.equal(projectDir('/a/b', '/home', { CLAUDE_CONFIG_DIR: '/srv/tenant-a' }), '/srv/tenant-a/projects/-a-b')
+  assert.equal(projectDir('/a/b', '/home', { CLAUDE_CONFIG_DIR: '/srv/tenant-a', CLAUDE_CODE_PROJECT_DIR_NAME: 'work' }), '/srv/tenant-a/projects/work')
+  assert.equal(projectDir('/a/b', '/home', { CLAUDE_CODE_PROJECT_DIR_NAME: 'work' }), '/home/.claude/projects/-a-b')
+  assert.equal(projectDir('/a/b', '/home', { CLAUDE_CONFIG_DIR: '' }), '/home/.claude/projects/-a-b')
+})
+
+test('--project reads the transcripts under CLAUDE_CONFIG_DIR, not only under ~/.claude', () => {
+  const config = mkdtempSync(join(tmpdir(), 'm3l-og-cfg-'))
+  const cwd = mkdtempSync(join(tmpdir(), 'm3l-og-cwd-'))
+  const dir = join(config, 'projects', realpathSync(cwd).replace(/[^A-Za-z0-9]/g, '-'))
+  mkdirSync(dir, { recursive: true })
+  writeFileSync(join(dir, 's.jsonl'), JSON.stringify(assistant('a', usage(7, 3), [])))
+  const env = { ...process.env, CLAUDE_CONFIG_DIR: config, HOME: mkdtempSync(join(tmpdir(), 'm3l-og-home-')) }
+  delete env.CLAUDE_CODE_PROJECT_DIR_NAME
+  const r = spawnSync('node', [MEASURE, '--project'], { cwd, env, encoding: 'utf8' })
+  assert.equal(r.status, 0, r.stderr)
+  assert.equal(JSON.parse(r.stdout).exact.output, 7)
 })
 
 test('a directory argument also expands to each session\'s subagent transcripts, and measure counts them', () => {
