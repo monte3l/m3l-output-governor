@@ -23,6 +23,7 @@ export default {
   exclude: [
     { glob: "CHANGELOG.md", reason: "release notes live on the GitHub releases page" },
     { glob: ".claude/**", reason: "instructions for coding agents, not reader-facing" },
+    { glob: "plugin-evals/**", reason: "claude plugin eval prompts and graders, test data, not reader-facing" },
     { glob: ".github/pull_request_template.md", reason: "GitHub pull request form, not reader-facing" },
     { glob: "design/source/**", reason: "vendored m3l-design release, never edited here; the kit and brand book are documented upstream" },
   ],

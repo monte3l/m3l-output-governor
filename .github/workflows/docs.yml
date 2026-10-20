@@ -90,8 +90,7 @@ jobs:
       # --ignore-scripts is safe here: an assets-only `wrangler deploy` (no
       # bundling, no `wrangler dev`) needs neither esbuild's nor workerd's
       # postinstall-fetched binaries -- verified locally before adding this
-      # step. Same pattern as release.yml's `npm ci --ignore-scripts --prefix
-      # tools/release`.
+      # step.
       - run: npm ci --ignore-scripts --prefix .github/deploy-tools
 
       - name: Deploy to Cloudflare

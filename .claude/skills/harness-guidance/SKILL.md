@@ -46,8 +46,8 @@ This skill has authority over this repository's whole Claude Code surface:
 - **`.claude/`**: `settings.json` and its hook wiring, every hook, every agent
   (frontmatter, model tiering, tool grants), every skill, every rule, and
   `.claude/CLAUDE.md`.
-- **The plugin's own root components**: `.claude-plugin/` (plugin and
-  marketplace manifests) and `skills/`. These ship to users, so a stale field
+- **The plugin's own root components**: `.claude-plugin/` (the plugin
+  manifest) and `skills/`. These ship to users, so a stale field
   there reaches them, not just this repository's own sessions.
 
 An interview-derived emphasis tells this skill which facet to research

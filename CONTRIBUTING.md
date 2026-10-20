@@ -48,6 +48,40 @@ README or `evals/results.md`: the docs check compares them with the code and the
 committed runs, and fails with the name of what drifted. Fix the page, never
 the kit.
 
+## Versioning
+
+Releases follow Semantic Versioning, and the contract is defined under
+"Versioning policy" in the [README](README.md#versioning-policy).
+
+## Releasing
+
+Only a collaborator releases. Each step is its own pull request or command, and
+a pushed tag cannot be moved or deleted (the org tags ruleset), so check before
+you push it.
+
+1. Bump `version` in `.claude-plugin/plugin.json`. Move the entries under
+   **Unreleased** in `CHANGELOG.md` to a new `## X.Y.Z (date)` heading.
+2. Merge that change to `main` through a pull request.
+3. On the merged commit, run `claude plugin tag --dry-run`, then
+   `git tag -s m3l-output-governor--vX.Y.Z -m "m3l-output-governor X.Y.Z"` and
+   `git tag -v m3l-output-governor--vX.Y.Z`.
+4. Push the tag: `git push origin m3l-output-governor--vX.Y.Z`.
+5. Create the GitHub release as a draft from that tag, with the new
+   `CHANGELOG.md` section as its notes, check it, then publish it:
+   `gh release create m3l-output-governor--vX.Y.Z --verify-tag --draft --notes-file <file>`
+   and `gh release edit m3l-output-governor--vX.Y.Z --draft=false`.
+6. In `monte3l/m3l-plugins`, bump the catalog pin in a pull request: the `ref`
+   is the tag and the `sha` is `git rev-parse m3l-output-governor--vX.Y.Z^{}`.
+   `bin/bump-pins.mjs --check` there shows a stale pin.
+
+Rerunning the live eval (`node evals/p4.mjs --live`, about $5) is optional for a
+release and needs your approval for the cost first. So does the skill's own
+suite, `claude plugin eval . --trust-plugin --no-publish --allow-tools 'Bash(node *)' --max-cost-usd 3`
+(add `--model claude-haiku-5-5`, `claude-sonnet-5-5` or `claude-opus-5-5` to pick
+one; about $0.02, $0.32 and $0.58). Keep `--no-publish`: by default a run also
+publishes its report, prompts included, to claude.ai. A suite that fails
+`no-auto-invocation` means the skill can be started by Claude, which it must not.
+
 ## Conduct
 
 Everyone taking part is bound by the

@@ -30,7 +30,7 @@ Scripts are plain Node `.mjs`. The README is the user-facing spec.
 | Command | What it does |
 | --- | --- |
 | `node --test "tests/*.test.mjs"` | Runs the unit tests. Pass a file path to run one. A bare `tests/` directory does not work on Node 24 |
-| `claude plugin validate --strict .` | Checks the plugin and marketplace manifests. CI runs the Claude Code version pinned in `.github/ci-tools/` (`npm ci --prefix .github/ci-tools`, then put its `node_modules/.bin` first on `PATH`) |
+| `claude plugin validate --strict .` | Checks the plugin manifest. CI runs the Claude Code version pinned in `.github/ci-tools/` (`npm ci --prefix .github/ci-tools`, then put its `node_modules/.bin` first on `PATH`) |
 | `node design/source/docs-kit/build.mjs --check` | The docs site gate (writes nothing): links, every tracked `*.md` is a page or excluded with a reason, `design/SHA256SUMS`, the `design/local/` CSS rule, and `scripts/doc-parity.mjs`. CI runs it in `verify.yml` |
 | `node design/source/docs-kit/build.mjs --out _site` | Builds the site locally. `_site/` is gitignored |
 | `node scripts/doc-parity.mjs` | Only the doc-versus-code parity checks. Prints `ok` or each drift, exit 1 on drift |
@@ -50,7 +50,8 @@ Scripts are plain Node `.mjs`. The README is the user-facing spec.
 | `evals/p4-2026-10-19.jsonl`, `-run2.jsonl`, `-run3.jsonl`, `evals/results.md` | The three recorded runs (counts only, no answer text) and their reading |
 | `tests/evals.test.mjs` | Dry run spawns nothing, pairing and summary maths, the fixture, the task checks |
 | `skills/measure/SKILL.md` | The plugin's one skill, `/m3l-output-governor:measure`. It injects `measure.mjs --project` output with the `!` shell syntax and has Claude interpret it. User-invoked only |
-| `.claude-plugin/` | Plugin and marketplace manifests. One skill; no hooks, mods or output styles |
+| `plugin-evals/` | `claude plugin eval` cases for the skill (a `prompt.md` and `graders/*.md` each), found through `experimental.evals` in `plugin.json` because `evals/` holds the P4 files. Free graders only (`regex`, `tool_used`). A run is billed and its sandbox cannot read the home directory, so it cannot reach the transcript path (`UNVERIFIED.md` item 5). Results land in `plugin-evals/results/`, gitignored |
+| `.claude-plugin/` | The plugin manifest. There is no `marketplace.json`: the plugin is listed in the `monte3l/m3l-plugins` catalog. One skill; no hooks, mods or output styles |
 | `.claude/` | The working harness for this repository: settings, hooks, agents, rules and skills for the people and agents who change it. It is not the plugin's own surface, which stays at the root (`skills/`, `.claude-plugin/`). See "Harness" below |
 | `.github/ci-tools/` | `package.json` and lockfile pinning `@anthropic-ai/claude-code`; the `plugin` lane of `verify.yml` installs it with its install script (an accepted risk, see `SECURITY.md`). Dependabot proposes bumps after a one-day cooldown |
 | `scripts/doc-parity.mjs` | A kit parity module (listed in `docs.config.mjs` `parity`). Compares the README with `measure.mjs` flags, the gate default and the JSON field paths (flattened from `measure()` run on a synthetic transcript), with `p4.mjs` flags, defaults, task count, per-run caps and the dry-run plan, and with the result-row key count. It recomputes the committed `evals/p4-2026-10-19*.jsonl` runs through `summarize.mjs` and asserts every figure in `NUMBER_TABLE` (README Levers, `evals/results.md`, `UNVERIFIED.md` items 14, 17 and 19). It also checks the skill invocation and `disable-model-invocation`. `tests/doc-parity.test.mjs` covers its pure helpers |
@@ -160,9 +161,10 @@ Git workflow, enforced by the hooks above and by the `main` ruleset:
   `NUMBER_TABLE`; one that does not (the author's 36% thinking share, the 2% and
   2.4% baselines, the 359 sessions, post hoc re-scoring) cannot be derived and
   stays hand-kept.
-- `tests/doc-parity.test.mjs`, `scripts/doc-parity.mjs`, `docs.config.mjs` and
-  `design/source` are left out of the P4 fixture (`EXCLUDED` in `evals/p4.mjs`),
-  so a docs-site file never changes what a live run sees.
+- `tests/doc-parity.test.mjs`, `scripts/doc-parity.mjs`, `docs.config.mjs`,
+  `design/source` and `plugin-evals/` are left out of the P4 fixture
+  (`EXCLUDED` in `evals/p4.mjs`), so a docs-site file or a plugin-eval case
+  never changes what a live run sees.
 - Bold, never italics or underlines; a GitHub alert matched to severity, at most
   two in a row, `[!CAUTION]` only for data loss or anything irreversible; plain
   direct sentences; tables for tabular data.
