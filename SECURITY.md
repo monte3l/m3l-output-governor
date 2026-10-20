@@ -12,10 +12,12 @@ spends money only when given `--live`.
 
 | Version | Supported |
 | --- | --- |
+| Latest `1.x` release | Yes |
 | Latest commit on `main` | Yes |
 | Anything else | No |
 
-This is a single-maintainer project. Only the latest commit on `main` gets a fix.
+This is a single-maintainer project. Only the latest release and the latest
+commit on `main` get a fix.
 
 ## Reporting a vulnerability
 

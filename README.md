@@ -23,11 +23,18 @@ sessions instead of guessed. It never changes what Claude sees, says or does.
 You need [Claude Code](https://docs.claude.com/en/docs/claude-code/overview)
 (see [Requirements](#requirements) for versions).
 
-1. Install the plugin:
+1. Install the plugin from the monte3l catalog:
 
    ```
-   /plugin install m3l-output-governor --marketplace monte3l/m3l-output-governor
+   /plugin marketplace add monte3l/m3l-plugins
+   /plugin install m3l-output-governor@monte3l
    ```
+
+   If you installed it before 1.0.0 from the `monte3l-output-governor`
+   marketplace, remove that marketplace first with
+   `claude plugin marketplace remove monte3l-output-governor`, so the plugin is
+   not installed twice. The plugin name does not change. Its id becomes
+   `m3l-output-governor@monte3l`.
 
 2. In a project you have used with Claude Code, run
    `/m3l-output-governor:measure`. Claude reports the numbers for that project's
@@ -36,7 +43,14 @@ You need [Claude Code](https://docs.claude.com/en/docs/claude-code/overview)
    applies to you. On the author's sessions it was 36%.
 
 To try it from a checkout without installing, run
-`claude --plugin-dir /path/to/m3l-output-governor`.
+`claude --plugin-dir /path/to/m3l-output-governor`. To run a specific release,
+check out its tag, `m3l-output-governor--vX.Y.Z`, first.
+
+`monte3l` is not an official Anthropic marketplace, so Claude Code does not
+update its plugins automatically. To get a new release, run
+`claude plugin update m3l-output-governor@monte3l`. Claude Code keeps you on the
+installed version until the plugin's `version` changes. See
+[versions and updates](https://code.claude.com/docs/en/plugins/loading).
 
 ## How it works
 
@@ -46,6 +60,13 @@ project's session transcripts, and Claude reports the numbers with the lever
 they support. The script only reads transcripts and prints counts: never prompt
 text, tool output or paths. The skill is user-invoked only, because it reads
 your session history.
+
+That one call is everything the plugin runs. It has no `bin/` directory, no MCP
+server and no hook, and the skill's `allowed-tools` pre-approves only
+`node "${CLAUDE_PLUGIN_ROOT}/scripts/measure.mjs" *`. Claude Code's own guidance
+is that an installed plugin can run code with your privileges, so
+[read the script](scripts/measure.mjs) before you install. It has no
+dependencies and makes no network call.
 
 Every number is labelled **exact** (read straight from a transcript's `usage`
 fields) or **estimated** (derived from characters, at 4 characters per token).
@@ -70,7 +91,7 @@ node scripts/measure.mjs --project           # this directory's transcripts
 | Argument | Meaning |
 | --- | --- |
 | `<file or directory>…` | A transcript file, or a project directory. A directory stands for its `.jsonl` files plus each session's `<session>/subagents/*.jsonl` |
-| `--project` | This project's transcript folder under `~/.claude/projects`, from the exact current directory (not the git root, so run it from the project root) |
+| `--project` | This project's transcript folder under `~/.claude/projects`, or under `$CLAUDE_CONFIG_DIR/projects` when that variable is set, from the exact current directory (not the git root, so run it from the project root). `CLAUDE_CODE_PROJECT_DIR_NAME` replaces the folder name when `CLAUDE_CONFIG_DIR` is set too |
 | `--gate <chars>` | Separate value, default 8000. `--gate=4000` is not accepted. Must be a positive number |
 
 The script reads local session transcripts and prints counts and tool names
@@ -113,7 +134,21 @@ effort.
 ## Requirements
 
 - **Claude Code**, with version 2.1.237 or newer for the Concise output style
-  and 2.1.261 or newer for `bashOutputMaxChars`.
+  and 2.1.261 or newer for `bashOutputMaxChars`. Those floors are for the two
+  levers this README discusses. `plugin.json` has no field for a minimum
+  version, so the plugin checks nothing itself. It was tested on Claude Code
+  2.1.303 and 2.1.304.
+- **Session transcripts that still exist.** Claude Code deletes them after 30
+  days by default (`cleanupPeriodDays`), so the skill can only measure what is
+  left. See [data usage](https://code.claude.com/docs/en/data-usage).
+- **A policy that allows the skill's shell command.** Two organization policies
+  stop the skill. `disableSkillShellExecution` replaces its command with a note,
+  and the skill says the command did not run. `allowManagedPermissionRulesOnly`
+  drops the plugin's `allowed-tools` pre-approval, so the skill aborts at once
+  with no report. In both cases run `node scripts/measure.mjs --project`
+  yourself instead. `strictPluginOnlyCustomization` locked to hooks and
+  `allowManagedHooksOnly` did not affect it. Each policy was tried once, on
+  Haiku 5.5 (see [`UNVERIFIED.md`](UNVERIFIED.md)).
 - **Node 24 or newer**, to run `scripts/measure.mjs` and the evals outside the
   skill. `.node-version` is the authority. The plugin has no `package.json` and
   no runtime dependency.
@@ -129,6 +164,7 @@ node scripts/doc-parity.mjs                       # only the doc-versus-code par
 node evals/summarize.mjs evals/p4-2026-10-19.jsonl   # reproduce the P4 table, free (also the -run2 and -run3 files)
 node evals/p4.mjs                                 # dry run: prints the plan and a cost estimate
 node evals/p4.mjs --live                          # spends about $5 on the credential claude resolves
+claude plugin eval . --trust-plugin --no-publish --allow-tools 'Bash(node *)' --max-cost-usd 3   # skill cases in plugin-evals/, billed (about $0.02 on Haiku, $0.58 on Opus)
 ```
 
 Commits are Conventional Commits, signed, with a `Signed-off-by` trailer
@@ -173,6 +209,23 @@ repeated calls, answer length, pass, error).
 - [`CONTRIBUTING.md`](CONTRIBUTING.md) -- how to report a bug, commit and open a
   pull request. The code of conduct and support are the
   [organization defaults](https://github.com/monte3l/.github).
+
+## Versioning policy
+
+Releases follow [Semantic Versioning](https://semver.org). The public contract
+is the `scripts/measure.mjs` flags and exit codes, the field paths of its JSON
+output, and the skill name `/m3l-output-governor:measure`. The `evals/` scripts
+and their result rows are a recorded experiment, not part of the contract.
+
+| Bump | When |
+| --- | --- |
+| Major | A `measure.mjs` flag, exit code or output field is removed or renamed, the skill name changes, or the minimum Node or Claude Code version in [Requirements](#requirements) is raised |
+| Minor | A new flag, output field or skill, with existing ones unchanged |
+| Patch | A fix, or a docs or CI change, with no change to the contract |
+
+Each release is a signed tag named `m3l-output-governor--vX.Y.Z` and a GitHub
+release, and `CHANGELOG.md` lists what changed. How a release is cut is in
+[`CONTRIBUTING.md`](CONTRIBUTING.md).
 
 ## License
 
