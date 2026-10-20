@@ -298,7 +298,7 @@ function shellWordValue(word) {
  * them; `raw` is kept for the things quoting itself decides: whether a word is
  * a `VAR=value` assignment, and a nested `-c` payload, which is re-parsed.
  *
- * @typedef {{ raw: string, value: string | undefined }} Word
+ * @typedef {{ raw: string, value: string | undefined, fromEnvSplit?: boolean }} Word
  */
 
 /** @param {string} raw @returns {Word} */
@@ -402,19 +402,46 @@ function stripPrefixVerbs(input) {
    * @type {Word | undefined}
    */
   let splitOperand;
-  /** @param {number} k @returns {{ operand: Word, consumed: number } | undefined} */
+  /**
+   * Reads one `env` flag word as `env` itself would and reports the command
+   * string it hands over with `-S`/`--split-string`, or undefined when the
+   * flag is not a split flag. `--split-string` may be abbreviated to any unique
+   * prefix (`--s` is already unique), and `S` may sit anywhere in a short-flag
+   * cluster (`-iS`, `-vS'cmd'`), where it takes the rest of the word, else the
+   * next word. `u`, `C` and `P` take an argument of their own, so a cluster
+   * cannot reach a later `S`.
+   *
+   * @param {number} k
+   * @returns {{ operand: Word, consumed: number } | undefined}
+   */
   const envSplit = (k) => {
     const flag = text(k);
-    if ((flag === "-S" || flag === "--split-string") && k + 1 < words.length) {
-      return { operand: words[k + 1], consumed: 2 };
+    const nextWord = k + 1 < words.length ? words[k + 1] : undefined;
+    /** @param {Word} operand @param {number} consumed */
+    const found = (operand, consumed) => ({
+      operand: { ...operand, fromEnvSplit: true },
+      consumed,
+    });
+    if (flag.startsWith("--")) {
+      const eq = flag.indexOf("=");
+      const name = eq === -1 ? flag : flag.slice(0, eq);
+      if (name.length < 3 || !"--split-string".startsWith(name)) {
+        return undefined;
+      }
+      if (eq !== -1) {
+        return found(toWord(raw(k).slice(raw(k).indexOf("=") + 1)), 1);
+      }
+      return nextWord === undefined ? undefined : found(nextWord, 2);
     }
-    const glued = flag.startsWith("--split-string=")
-      ? "--split-string=".length
-      : flag.length > 2 && flag.startsWith("-S")
-        ? 2
-        : 0;
-    if (glued === 0) return undefined;
-    return { operand: toWord(raw(k).slice(glued)), consumed: 1 };
+    for (let c = 1; c < flag.length; c++) {
+      if ("uCP".includes(flag[c])) return undefined;
+      if (flag[c] !== "S") continue;
+      if (c + 1 < flag.length) {
+        return found(toWord(raw(k).slice(raw(k).indexOf("S", 1) + 1)), 1);
+      }
+      return nextWord === undefined ? undefined : found(nextWord, 2);
+    }
+    return undefined;
   };
   const skipAssignments = (allowFlags) => {
     while (i < words.length) {
@@ -1187,10 +1214,25 @@ function classifyTokens(rawWords, inherited = []) {
   }
   if (verb.length === 0) return undefined;
 
-  // A command word that still holds whitespace once unquoted is a command
-  // string, not a program name: `env -S 'rm -rf x'` leaves its operand here.
+  // `env -S STRING` splits STRING into a command and runs it with the words
+  // that follow, so the whole thing is classified as one command string.
+  // `env` first rewrites `\_`, `\c`, `\t`, `${VAR}` and `#` inside it; the
+  // guard does not, so an operand using them cannot be read and is refused.
+  if (words[0].fromEnvSplit === true) {
+    if (/[\\$]/.test(words[0].value ?? "")) {
+      return {
+        blocked: true,
+        reason:
+          "runs an env -S command string with escapes or variables that cannot be resolved here",
+      };
+    }
+    return classifyNestedCommand("env -S", words);
+  }
+
+  // Any other command word that still holds whitespace once unquoted is a
+  // command string, not a program name. The words after it are its arguments.
   if (/\s/.test(words[0].value)) {
-    return classifyNestedCommand("a quoted command string", [words[0]]);
+    return classifyNestedCommand("a quoted command string", words);
   }
 
   if (SHELLS.has(verb)) {
