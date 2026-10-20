@@ -6,8 +6,8 @@ name: Verify
 # ruleset lists `verify`, so keep the job name of the last job below.
 #
 # Lanes are separate jobs, never a matrix, so a failure names its concern:
-# `checks` (tests and the docs kit, no npm packages), `plugin` (Claude Code),
-# `dco`.
+# `checks` (tests, the harness tests and the docs kit, no npm packages),
+# `plugin` (Claude Code), `dco`.
 #
 # Only the `plugin` lane installs anything. Claude Code comes from
 # .github/ci-tools/, whose committed lockfile pins it by integrity hash. Its
@@ -43,6 +43,12 @@ jobs:
           node-version-file: .node-version
 
       - run: node --test "tests/*.test.mjs"
+
+      # The harness's own tests: the hooks that guard every Bash, Write and Edit call
+      # (a broken one blocks them all, so they fail closed) and the settings that
+      # register them. They live in .claude/tests/ because the eval fixture leaves
+      # .claude/ out, so they never show up there as a second failing test.
+      - run: node --test ".claude/tests/*.test.mjs"
 
       # The docs site gate: links, page coverage, design/SHA256SUMS, the local
       # CSS rule, and scripts/doc-parity.mjs (README and results against the

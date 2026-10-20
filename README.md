@@ -170,7 +170,8 @@ repeated calls, answer length, pass, error).
 - [`CHANGELOG.md`](CHANGELOG.md) -- what changed in each release.
 - [`.claude/CLAUDE.md`](.claude/CLAUDE.md) -- the architecture and constraints,
   written for Claude Code agents.
-- Contributing, the code of conduct and support are the
+- [`CONTRIBUTING.md`](CONTRIBUTING.md) -- how to report a bug, commit and open a
+  pull request. The code of conduct and support are the
   [organization defaults](https://github.com/monte3l/.github).
 
 ## License

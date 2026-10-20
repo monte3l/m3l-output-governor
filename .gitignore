@@ -7,3 +7,5 @@ evals/.results/
 .github/ci-tools/node_modules/
 _site/
 .github/deploy-tools/node_modules/
+.groundwork/
+.claude/skills/customize/
