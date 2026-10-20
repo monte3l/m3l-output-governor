@@ -1,0 +1,17 @@
+{
+  "$comment": "Policy for the weekly environment cleanup (.github/workflows/environments.yml, scripts from monte3l/m3l-groundwork). An environment NOT listed here is deleted outright, along with its deployments, unless it has required reviewers or secrets, in which case it is left alone and reported. Add every new `environment:` name here in the same change. See blueprint/README.md in monte3l/.github, section 'Environment cleanup'.",
+  "environments": {
+    "docs-cloudflare": {
+      "retain": 5,
+      "expect": {
+        "branches": ["main"]
+      }
+    },
+    "env-janitor": {
+      "retain": 0,
+      "expect": {
+        "branches": ["main"]
+      }
+    }
+  }
+}

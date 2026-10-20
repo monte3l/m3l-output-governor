@@ -1,0 +1,99 @@
+name: Environments
+
+# Adopting: copy this file and add `.github/environments.json` listing every
+# environment the repository's workflows reference (see blueprint/README.md,
+# "Environment cleanup", and the policy format in
+# m3l-groundwork/docs/environment-janitor.md). Keep an `env-janitor` entry
+# with `retain: 0`. Then install the `monte3l-env-janitor` GitHub App on this
+# repository and create the `env-janitor` environment with its two secrets.
+#
+# What this does: cleans up stale GitHub Deployments and Environments this
+# repository's CI has left behind. GitHub creates an environment the first time
+# a job references it and never removes it. The planner and executor
+# (bin/cleanup-environments.mjs) live in monte3l/m3l-groundwork and are checked
+# out here at a pinned commit, so there is one copy of the code. They read
+# `.github/environments.json` from this repository, delete any environment not
+# listed (unless it holds required reviewers or secrets, which is reported and
+# left alone), and trim each listed one to its retention window.
+#
+# The pin below is not bumped by Dependabot, which only reads `uses:`. Update
+# it by hand to the m3l-groundwork commit you reviewed when the planner changes.
+#
+# Deleting an environment needs Administration: write, which the default
+# GITHUB_TOKEN cannot hold, so the job mints a token from the dedicated
+# monte3l-env-janitor App, installed on selected repositories only.
+on:
+  schedule:
+    # Weekly. A stale environment sitting a few extra days costs nothing.
+    - cron: "17 4 * * 1"
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: "Print the plan without making any change"
+        type: boolean
+        default: true
+
+permissions: {}
+
+concurrency:
+  group: ${{ github.workflow }}
+  cancel-in-progress: false
+
+jobs:
+  cleanup:
+    name: Clean up stale environments
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    environment:
+      name: env-janitor
+      # This job creates no deployment of its own. The environment only
+      # scopes its secrets to `main`.
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+
+      - name: Check out the janitor scripts
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          repository: monte3l/m3l-groundwork
+          ref: 76cba66f2e50fd7ed065f4e8d597833a9d1654ba # m3l-groundwork main, 2026-10-20
+          path: .janitor
+          sparse-checkout: bin
+          persist-credentials: false
+
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
+        with:
+          node-version-file: .node-version
+
+      - id: app-token
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
+        with:
+          client-id: ${{ secrets.JANITOR_APP_CLIENT_ID }}
+          private-key: ${{ secrets.JANITOR_APP_PRIVATE_KEY }}
+          owner: ${{ github.repository_owner }}
+          repositories: ${{ github.event.repository.name }}
+          permission-administration: write
+          permission-deployments: write
+          # Not permission-secrets: environment-scoped secrets are gated by
+          # the Environments permission.
+          permission-environments: read
+
+      - name: Run cleanup
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          # The scheduled run applies the plan. A manual dispatch defaults to
+          # --dry-run and only applies when the input is unchecked.
+          DRY_RUN: ${{ github.event_name == 'workflow_dispatch' && inputs.dry_run }}
+        run: |
+          # Run from the workspace root: the script finds .github/environments.json
+          # through `git rev-parse --show-toplevel`, which is this repository,
+          # not the nested .janitor checkout.
+          if [ "$DRY_RUN" = "true" ]; then
+            node .janitor/bin/cleanup-environments.mjs --dry-run
+          else
+            node .janitor/bin/cleanup-environments.mjs
+          fi
