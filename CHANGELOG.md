@@ -4,6 +4,7 @@ Releases are tagged `m3l-output-governor--vX.Y.Z`. None has been tagged yet: `pl
 
 ## Unreleased
 
+- `marketplace.json`: the plugin entry's description now equals `plugin.json`'s, and `scripts/doc-parity.mjs` fails when the two differ.
 - `plugin.json`: the description now matches the GitHub repository's, which the daily `docs-live` metadata check compares.
 - Repository baseline: licence, REUSE, gitleaks, editorconfig, CODEOWNERS, workflow lint, dependency review, design marker (content tier, `v1.0.0`).
 - `scripts/measure.mjs`: offline token baseline from session transcripts, with the exact thinking split.

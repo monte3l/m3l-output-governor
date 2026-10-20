@@ -326,6 +326,11 @@ const check = async ({ root }) => {
   problems.push(...assertSameSet('skill invocations', invoked, skillDirs.map(dir => `/${pluginName}:${dir}`)))
   problems.push(...assertSame('skill name in SKILL.md frontmatter', /^name: (.+)$/m.exec(skill)?.[1], 'measure'))
   if (!/^disable-model-invocation: true$/m.test(skill)) problems.push('skills/measure/SKILL.md must keep `disable-model-invocation: true` (it reads session history)')
+
+  // The marketplace entry repeats the plugin's description; the two must not drift.
+  const manifest = JSON.parse(read('.claude-plugin/plugin.json'))
+  const entry = JSON.parse(read('.claude-plugin/marketplace.json')).plugins.find(plugin => plugin.name === manifest.name)
+  problems.push(...assertSame('marketplace.json description for the plugin vs plugin.json', entry?.description, manifest.description))
   return problems
 }
 
