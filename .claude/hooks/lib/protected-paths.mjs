@@ -14,10 +14,13 @@ import { basename, dirname, join, resolve } from "node:path";
 const WINDOWS_DRIVE = /^[A-Za-z]:/;
 
 const GUARDED = "(scripts|evals|tests|skills|\\.claude-plugin)\\/";
+// Both patterns are case-insensitive: on a case-insensitive filesystem (macOS
+// APFS, Windows) `Scripts/x.mjs` is the same file as `scripts/x.mjs`, so a
+// case-sensitive match would let a re-cased path past the guard.
 /** Scoped to a known project: the guarded directory must be a top-level one. */
-const PROTECTED_AT_ROOT = new RegExp(`^${GUARDED}`);
+const PROTECTED_AT_ROOT = new RegExp(`^${GUARDED}`, "i");
 /** Unscoped pre-filter: the guarded name at any path boundary, deliberately broad. */
-const PROTECTED_ANYWHERE = new RegExp(`(^|\\/)${GUARDED}`);
+const PROTECTED_ANYWHERE = new RegExp(`(^|\\/)${GUARDED}`, "i");
 
 /** `\` and `/` both normalized to `/`, so a Windows-style path is matched the same as a POSIX one. */
 function normalizeSlashes(path) {

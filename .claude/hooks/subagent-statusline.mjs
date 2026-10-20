@@ -41,6 +41,7 @@ import {
   formatTokenCount,
   truncateToWidth,
 } from "./statusline-layout.mjs";
+import { sanitizeDisplayText } from "./statusline.mjs";
 
 /** Elapsed-time threshold, in seconds, past which a row turns yellow. */
 export const ELAPSED_WARN_THRESHOLD_SEC = 15 * 60;
@@ -136,18 +137,24 @@ export function formatSubagentRow(task, env) {
     contextWindowSize,
   } = /** @type {Record<string, unknown>} */ (task);
   if (typeof id !== "string" || id.length === 0) return null;
-  const label =
+  const rawLabel =
     typeof name === "string" && name.length > 0
       ? name
       : typeof agentType === "string" && agentType.length > 0
         ? agentType
         : null;
-  if (label === null) return null;
+  if (rawLabel === null) return null;
+  // An agent name is text from a repository file or a payload: strip escape
+  // sequences so it cannot repaint the terminal, the same as statusline.mjs.
+  const label = sanitizeDisplayText(rawLabel);
+  if (label.length === 0) return null;
 
   const segments = [label];
 
   const effortText = formatEffort(effort);
-  if (effortText !== null) segments.push(`${MAGENTA}${effortText}${RESET}`);
+  if (effortText !== null) {
+    segments.push(`${MAGENTA}${sanitizeDisplayText(effortText)}${RESET}`);
+  }
 
   const tokenText = formatTokenFraction(tokenCount, contextWindowSize);
   if (tokenText !== null) segments.push(tokenText);

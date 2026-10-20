@@ -392,6 +392,30 @@ function stripPrefixVerbs(input) {
   const raw = (k) => words[k].raw;
   const text = (k) => wordText(words[k]);
   let i = 0;
+  /** The prefix verb whose flags `skipAssignments(true)` is currently skipping. */
+  let prefixVerb = "";
+  /**
+   * The command string an `env -S`/`--split-string` flag hands to `env`, which
+   * splits it into words and runs it. Kept apart so it can be put back in
+   * front as the real command instead of being skipped as just another flag.
+   *
+   * @type {Word | undefined}
+   */
+  let splitOperand;
+  /** @param {number} k @returns {{ operand: Word, consumed: number } | undefined} */
+  const envSplit = (k) => {
+    const flag = text(k);
+    if ((flag === "-S" || flag === "--split-string") && k + 1 < words.length) {
+      return { operand: words[k + 1], consumed: 2 };
+    }
+    const glued = flag.startsWith("--split-string=")
+      ? "--split-string=".length
+      : flag.length > 2 && flag.startsWith("-S")
+        ? 2
+        : 0;
+    if (glued === 0) return undefined;
+    return { operand: toWord(raw(k).slice(glued)), consumed: 1 };
+  };
   const skipAssignments = (allowFlags) => {
     while (i < words.length) {
       const name = ASSIGNMENT.exec(raw(i))?.[1];
@@ -402,7 +426,13 @@ function stripPrefixVerbs(input) {
           i,
         );
       } else if (allowFlags && text(i).startsWith("-")) {
-        i++;
+        const split = prefixVerb === "env" ? envSplit(i) : undefined;
+        if (split === undefined) {
+          i++;
+        } else {
+          splitOperand = split.operand;
+          i += split.consumed;
+        }
       } else {
         return;
       }
@@ -440,12 +470,19 @@ function stripPrefixVerbs(input) {
       if (baseName(text(i)) === "command" && (next === "-v" || next === "-V")) {
         break;
       }
+      prefixVerb = baseName(text(i));
       i++;
       skipAssignments(true);
     }
     if (i === start) break;
   }
-  return { words: words.slice(i), assignments };
+  return {
+    words:
+      splitOperand === undefined
+        ? words.slice(i)
+        : [splitOperand, ...words.slice(i)],
+    assignments,
+  };
 }
 
 /**
@@ -1149,6 +1186,12 @@ function classifyTokens(rawWords, inherited = []) {
     };
   }
   if (verb.length === 0) return undefined;
+
+  // A command word that still holds whitespace once unquoted is a command
+  // string, not a program name: `env -S 'rm -rf x'` leaves its operand here.
+  if (/\s/.test(words[0].value)) {
+    return classifyNestedCommand("a quoted command string", [words[0]]);
+  }
 
   if (SHELLS.has(verb)) {
     const commandIndex = shellCommandIndex(tokens);
