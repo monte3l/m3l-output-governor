@@ -28,6 +28,10 @@ name: Release
 on:
   push:
     branches: [main]
+  # A run that fails at startup (an Actions policy blocking an action, for
+  # example) cannot be re-run, and nothing else would start a new one before
+  # the next push. `prepare` below refuses any ref but the default branch.
+  workflow_dispatch:
 
 permissions: {}
 
@@ -40,6 +44,7 @@ concurrency:
 jobs:
   prepare:
     name: Prepare
+    if: github.ref == format('refs/heads/{0}', github.event.repository.default_branch)
     permissions:
       contents: read
     uses: monte3l/.github/.github/workflows/release-prepare.yml@ee47e005c774a2efae036a7b3201910e4eaf9e6f # release-baseline
