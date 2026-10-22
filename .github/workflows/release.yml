@@ -19,6 +19,10 @@ name: Release
 #   3. Set `notify` to the repositories that consume this one's releases
 #      (for example `["m3l-plugins"]`), or leave it empty.
 #
+# The two App secrets are passed by name, never `secrets: inherit`: inheriting
+# would hand the shared workflows every secret this repository can read (a docs
+# site holds a Cloudflare token), and a later change to them could use it.
+#
 # A package published to npm registers THIS file's name (`release.yml`) as its
 # trusted publisher: npm checks the calling workflow, not the shared one.
 on:
@@ -39,7 +43,9 @@ jobs:
     permissions:
       contents: read
     uses: monte3l/.github/.github/workflows/release-prepare.yml@ee47e005c774a2efae036a7b3201910e4eaf9e6f # release-baseline
-    secrets: inherit
+    secrets:
+      RELEASE_APP_CLIENT_ID: ${{ secrets.RELEASE_APP_CLIENT_ID }}
+      RELEASE_APP_PRIVATE_KEY: ${{ secrets.RELEASE_APP_PRIVATE_KEY }}
 
   # A repository-specific job goes here. It runs only when a release was
   # created, and attaches its assets to the draft named by
@@ -57,4 +63,6 @@ jobs:
     with:
       tag: ${{ needs.prepare.outputs.tag_name }}
       notify: '["m3l-plugins"]'
-    secrets: inherit
+    secrets:
+      RELEASE_APP_CLIENT_ID: ${{ secrets.RELEASE_APP_CLIENT_ID }}
+      RELEASE_APP_PRIVATE_KEY: ${{ secrets.RELEASE_APP_PRIVATE_KEY }}
