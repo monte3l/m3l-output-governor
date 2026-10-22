@@ -1,8 +1,6 @@
 # Changelog
 
-Releases are tagged `m3l-output-governor--vX.Y.Z`. See "Releasing" in CONTRIBUTING.md.
-
-## Unreleased
+Releases are tagged `m3l-output-governor--vX.Y.Z`. The release workflow writes each new section from the Conventional Commits since the last release. See "Releasing" in CONTRIBUTING.md.
 
 ## 1.0.0 (2026-10-20)
 
