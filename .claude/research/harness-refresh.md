@@ -1,6 +1,8 @@
-<!-- harness-refresh: last-verified=2026-10-20 claude-code-version=2.1.304 -->
+<!-- harness-refresh: last-verified=2026-10-22 claude-code-version=2.1.308 -->
 
 # Harness refresh tracker
+
+**Delta check, 2026-10-22 (delta only, no five-facet fan-out).** Run by `/customize` two days after the full sweep below. The changelog entries for 2.1.305 to 2.1.308 (read from `raw.githubusercontent.com/anthropics/claude-code`, first 100,000 characters) touch nothing this repository sets: no hook event, matcher or exit-code change, no agent frontmatter change, no key in `settings.json` here. Related entries: `sandbox.allowNestedUserNamespaces` (sandbox is not enabled, drift row 17 stays open), a subagent fallback-model naming fix (2.1.305), subagent transcript usage now recorded properly (2.1.307, relevant to `scripts/measure.mjs` totals on newer transcripts, unverified here), and fork subagents told which launch is their own (2.1.307). All claims below are carried forward unchanged and were not re-fetched.
 
 First sweep, 2026-10-20, run by `/customize` through `harness-guidance` refresh mode. Every
 claim below was `NEW`: no earlier tracker existed. Sources are Anthropic domains only.
