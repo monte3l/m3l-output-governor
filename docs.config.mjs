@@ -9,6 +9,7 @@ export default {
   repo: "https://github.com/monte3l/m3l-output-governor",
   siteUrl: "https://output-governor.monte3l.com",
   designDir: "design",
+  brand: true,
   manifest: ".claude-plugin/plugin.json", // its homepage must equal siteUrl
   navGroups: ["Start", "Reference", "Evidence", "Project", "Security"],
   pages: [
