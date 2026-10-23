@@ -1,6 +1,12 @@
+Thank you for the change. A few lines here help the review go quickly.
+
 ## What and why
 
-<!-- What does this change, and what problem does it solve? -->
+<!-- What does this change, and what problem does it solve? If it closes an issue, say so: "Closes #123". -->
+
+## How you checked it
+
+<!-- The commands you ran and what you saw. -->
 
 ## Checklist
 
