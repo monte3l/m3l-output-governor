@@ -1,7 +1,7 @@
 {
   "name": "m3l-output-governor",
   "version": "1.0.0",
-  "description": "Measures where Claude Code's output tokens go and records which levers cut them: effort and the built-in Concise output style.",
+  "description": "A Claude Code plugin that measures where your output tokens go and records which levers cut them, such as effort and the built-in Concise output style",
   "author": { "name": "Enrico Lionello" },
   "license": "MIT",
   "repository": "https://github.com/monte3l/m3l-output-governor",
