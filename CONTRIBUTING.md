@@ -37,13 +37,40 @@ Report a suspected security vulnerability privately. See
 | No dependency | The repository has no root `package.json`. Scripts are plain Node `.mjs` |
 | Statement, branch and function coverage of at least 80% over `scripts/` and `evals/` | The `checks` lane runs Node's built-in coverage with those thresholds |
 
+## Building and testing
+
+There is nothing to build: the plugin is the committed source, run by Node 24 or
+newer (`.node-version` is the authority). It has no runtime dependency, so
+there is no library or SDK to install. To work on it, clone the repository and
+run the commands in the
+[README](README.md#working-on-this-repo).
+
+| When | What runs |
+| --- | --- |
+| Before you push | `node --test "tests/*.test.mjs"`, `claude plugin validate --strict .` and `node design/source/docs-kit/build.mjs --check` |
+| On every pull request and every push to `main` | The `verify` workflow runs the unit tests with the coverage gate, the style check, the harness tests, the docs gate, plugin validation and the DCO check. CodeQL, Dependency Review, Gitleaks, REUSE, actionlint, zizmor and commit lint run beside it |
+| Never in CI | `node evals/p4.mjs --live` and `claude plugin eval`, because they are billed |
+
+## Dependencies
+
+The plugin and its scripts use no package. The only packages are the CI tools in
+`.github/ci-tools/` (the pinned Claude Code) and `.github/deploy-tools/` (the
+pinned wrangler), each pinned by a committed lockfile and installed with `npm ci`.
+Every GitHub Action is pinned by commit SHA, and a repository setting allows only
+a short list of them. Dependabot proposes bumps weekly after a cooldown, and
+Dependency Review fails a pull request that adds a high-severity vulnerability or
+a license outside the allow list (see [`SECURITY.md`](SECURITY.md)). Adding any
+dependency needs a reason in the pull request and the maintainer's agreement,
+because the no-dependency rule is part of why the plugin is safe to install.
+
 ## Pull requests
 
 1. Branch off `main` as `feat/<slug>` or `fix/<slug>`.
 2. Run the checks before pushing: `node --test "tests/*.test.mjs"`,
    `claude plugin validate --strict .` and
    `node design/source/docs-kit/build.mjs --check`.
-3. Add tests for new behavior and a regression test for a fix. A change to
+3. Add or update tests for every major change, and a regression test for a fix.
+   The coverage gate fails below 80%. A change to
    `scripts/measure.mjs` output also updates the README tables.
 4. Resolve every review thread. A pull request merges when its required checks
    pass and a code owner other than its author approves it.

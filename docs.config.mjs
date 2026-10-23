@@ -17,9 +17,13 @@ export default {
     { src: "skills/measure/SKILL.md", out: "skill.html", group: "Reference", label: "Measure skill prompt" },
     { src: "evals/results.md", out: "results.html", group: "Evidence", label: "Evaluation results" },
     { src: "UNVERIFIED.md", out: "UNVERIFIED.html", group: "Evidence", label: "Open items" },
+    { src: "docs/architecture.md", out: "architecture.html", group: "Reference", label: "Architecture" },
+    { src: "docs/GOVERNANCE.md", out: "GOVERNANCE.html", group: "Project", label: "Governance" },
+    { src: "docs/ROADMAP.md", out: "ROADMAP.html", group: "Project", label: "Roadmap" },
     { src: "CONTRIBUTING.md", out: "CONTRIBUTING.html", group: "Project", label: "Contributing" },
     { src: "design/README.md", out: "design.html", group: "Project", label: "Design system" },
     { src: "SECURITY.md", out: "SECURITY.html", group: "Security", label: "Security policy" },
+    { src: "docs/assurance-case.md", out: "assurance-case.html", group: "Security", label: "Assurance case" },
   ],
   exclude: [
     { glob: "CHANGELOG.md", reason: "release notes live on the GitHub releases page" },
