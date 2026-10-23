@@ -204,6 +204,13 @@ repeated calls, answer length, pass, error).
   what is still open.
 - [`SECURITY.md`](SECURITY.md) -- reporting a vulnerability, the accepted CI
   install-script risk, and the accepted Scorecard findings.
+- [`docs/architecture.md`](docs/architecture.md) -- the actors, the data flow and
+  every external interface.
+- [`docs/assurance-case.md`](docs/assurance-case.md) -- the threat model and why
+  each threat is countered.
+- [`docs/GOVERNANCE.md`](docs/GOVERNANCE.md) -- who decides, who has access, and
+  the Gold criteria one maintainer cannot meet.
+- [`docs/ROADMAP.md`](docs/ROADMAP.md) -- what is planned and what is ruled out.
 - [`CHANGELOG.md`](CHANGELOG.md) -- what changed in each release.
 - [`.claude/CLAUDE.md`](.claude/CLAUDE.md) -- the architecture and constraints,
   written for Claude Code agents.

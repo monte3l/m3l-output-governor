@@ -59,6 +59,7 @@ Scripts are plain Node `.mjs`. The README is the user-facing spec.
 | `docs.config.mjs` | The docs site config: pages, nav groups, `exclude` (each with a reason), the manifest, and the parity module |
 | `.github/deploy-tools/`, `.github/workflows/docs.yml`, `docs-live.yml` | Cloudflare Workers Static Assets deploy (Worker `m3l-output-governor-docs`, `output-governor.monte3l.com`), the post-deploy smoke test and the daily live check with `--metadata` |
 | `.github/workflows/labeler.yml`, `.github/labeler.yml` | Labels each PR by area (`area:ci`, `docs`, `design`, `harness` from the org blueprint; `area:plugin`, `area:evals` specific to this repo) with `actions/labeler`. Labels only, not a required check. The labels already exist on GitHub, so a new rule needs its label created first |
+| `docs/` | `GOVERNANCE.md`, `ROADMAP.md`, `architecture.md` and `assurance-case.md`: the OpenSSF Silver and Baseline documents. Site pages, and left out of the P4 fixture. `.bestpractices.json` at the root is the self-assessment that cites them |
 | `design/README.md` | The m3l-design marker, vendored tier. `design/source/`, `tokens.css` and `SHA256SUMS` are the verbatim copy |
 
 Constraints that are not obvious from one file:
@@ -92,9 +93,11 @@ Constraints that are not obvious from one file:
 
 Everything here lives under `.claude/`, which `evals/p4.mjs` (`EXCLUDED`) and
 `docs.config.mjs` (`exclude`) both leave out, so none of it changes what a live eval
-run sees or fails the docs check. There is no root `bin/`, `docs/` or `CLAUDE.md`: a
-root `CLAUDE.md` fails `claude plugin validate --strict .`, and `bin/` and `docs/` are
-not excluded from the eval fixture. Put harness files under `.claude/`, never beside it.
+run sees or fails the docs check. There is no root `bin/` or `CLAUDE.md`: a
+root `CLAUDE.md` fails `claude plugin validate --strict .`, and `bin/` is not excluded
+from the eval fixture. Put harness files under `.claude/`, never beside it. The root
+`docs/` holds reader-facing pages (governance, roadmap, architecture, assurance case),
+all listed in `docs.config.mjs` `pages` and left out of the fixture.
 
 | Path | What it does |
 | --- | --- |
@@ -164,7 +167,7 @@ Git workflow, enforced by the hooks above and by the `main` ruleset:
   2.4% baselines, the 359 sessions, post hoc re-scoring) cannot be derived and
   stays hand-kept.
 - `tests/doc-parity.test.mjs`, `scripts/doc-parity.mjs`, `docs.config.mjs`,
-  `design/source` and `plugin-evals/` are left out of the P4 fixture
+  `design/source`, `docs/` and `plugin-evals/` are left out of the P4 fixture
   (`EXCLUDED` in `evals/p4.mjs`), so a docs-site file or a plugin-eval case
   never changes what a live run sees.
 - Bold, never italics or underlines; a GitHub alert matched to severity, at most

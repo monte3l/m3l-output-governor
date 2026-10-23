@@ -28,7 +28,7 @@ const testsPass = dir => {
 // Left out of the fixture: git history, the eval itself and its test (so the one failing test is the seeded one),
 // the project memory and notes that describe the seeded bug, installed dependencies, and the docs site's own
 // checks and vendored design files (a failing test or a large tree there would change what each run sees).
-const EXCLUDED = /\/(\.git|evals|plugin-evals|\.claude|node_modules|UNVERIFIED\.md|tests\/evals\.test\.mjs|tests\/doc-parity\.test\.mjs|scripts\/doc-parity\.mjs|docs\.config\.mjs|design\/source|design\/tokens\.css|design\/SHA256SUMS)(\/|$)/
+const EXCLUDED = /\/(\.git|evals|docs|plugin-evals|\.claude|node_modules|UNVERIFIED\.md|tests\/evals\.test\.mjs|tests\/doc-parity\.test\.mjs|scripts\/doc-parity\.mjs|docs\.config\.mjs|design\/source|design\/tokens\.css|design\/SHA256SUMS)(\/|$)/
 
 /**
  * A scratch copy of this repository with a seeded boundary bug in scripts/measure.mjs (`>=` made `>`),
