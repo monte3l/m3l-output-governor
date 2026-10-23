@@ -30,6 +30,7 @@ Scripts are plain Node `.mjs`. The README is the user-facing spec.
 | Command | What it does |
 | --- | --- |
 | `node --test "tests/*.test.mjs"` | Runs the unit tests. Pass a file path to run one. A bare `tests/` directory does not work on Node 24 |
+| `node --test --experimental-test-coverage --test-coverage-include="scripts/**" --test-coverage-include="evals/**" --test-coverage-lines=80 --test-coverage-branches=80 --test-coverage-functions=80 "tests/*.test.mjs"` | The unit tests with the 80% coverage gate that `verify.yml` enforces (OpenSSF Silver). It measures about 90% lines today. CI also runs `editorconfig-checker -disable-indent-size` over tracked files, skipping `design/source/`, `design/tokens.css`, `design/SHA256SUMS`, `*.jsonl` and lockfiles |
 | `claude plugin validate --strict .` | Checks the plugin manifest. CI runs the Claude Code version pinned in `.github/ci-tools/` (`npm ci --prefix .github/ci-tools`, then put its `node_modules/.bin` first on `PATH`) |
 | `node design/source/docs-kit/build.mjs --check` | The docs site gate (writes nothing): links, every tracked `*.md` is a page or excluded with a reason, `design/SHA256SUMS`, the `design/local/` CSS rule, and `scripts/doc-parity.mjs`. CI runs it in `verify.yml` |
 | `node design/source/docs-kit/build.mjs --out _site` | Builds the site locally. `_site/` is gitignored |

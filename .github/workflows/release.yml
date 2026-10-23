@@ -52,13 +52,63 @@ jobs:
       RELEASE_APP_CLIENT_ID: ${{ secrets.RELEASE_APP_CLIENT_ID }}
       RELEASE_APP_PRIVATE_KEY: ${{ secrets.RELEASE_APP_PRIVATE_KEY }}
 
-  # A repository-specific job goes here. It runs only when a release was
-  # created, and attaches its assets to the draft named by
-  # `needs.prepare.outputs.tag_name`. Then add it to `finalize`'s `needs`.
+  # Attaches a source tarball and its Sigstore bundle to the draft. The
+  # tarball is what the monte3l/m3l-plugins catalog clones, so the signed asset
+  # is the artifact users actually install. The bundle is an asset because
+  # OpenSSF Scorecard's Signed-Releases check only looks at release assets
+  # (`*.sigstore.json`), never at GitHub's attestation store. Verify with
+  # `gh attestation verify <tarball> --bundle <tarball>.sigstore.json
+  # -R monte3l/m3l-output-governor` (SECURITY.md, "Verifying releases").
+  assets:
+    name: Release assets
+    needs: [prepare]
+    if: needs.prepare.outputs.releases_created == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+      id-token: write
+      attestations: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+
+      - name: Build the source tarball
+        env:
+          VERSION: ${{ needs.prepare.outputs.version }}
+        run: |
+          mkdir release-assets
+          git archive --format=tar.gz --prefix="m3l-output-governor-${VERSION}/" \
+            --output="release-assets/m3l-output-governor-${VERSION}.tar.gz" HEAD
+
+      - name: Attest build provenance for the tarball
+        id: attest
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        with:
+          subject-path: release-assets/*.tar.gz
+
+      # The assets go on the draft BEFORE it is published, because an
+      # immutable release locks them at publish.
+      - name: Attach the attested assets to the draft and read them back
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ needs.prepare.outputs.tag_name }}
+          ATTEST_BUNDLE: ${{ steps.attest.outputs.bundle-path }}
+        run: |
+          tarball="$(find release-assets -name '*.tar.gz' -print -quit)"
+          cp "$ATTEST_BUNDLE" "${tarball}.sigstore.json"
+          assets=("$tarball" "${tarball}.sigstore.json")
+          gh release upload "$TAG" "${assets[@]}" --clobber --repo "$GITHUB_REPOSITORY"
+          mkdir uploaded
+          gh release download "$TAG" --dir uploaded --repo "$GITHUB_REPOSITORY"
+          for asset in "${assets[@]}"; do
+            cmp -- "$asset" "uploaded/$(basename -- "$asset")"
+          done
 
   finalize:
     name: Finalize
-    needs: [prepare]
+    needs: [prepare, assets]
     if: needs.prepare.outputs.releases_created == 'true'
     permissions:
       contents: write
@@ -67,6 +117,7 @@ jobs:
     uses: monte3l/.github/.github/workflows/release-finalize.yml@ee47e005c774a2efae036a7b3201910e4eaf9e6f # release-baseline
     with:
       tag: ${{ needs.prepare.outputs.tag_name }}
+      attest: false # the `assets` job attested the tarball and attached its bundle
       notify: '["m3l-plugins"]'
     secrets:
       RELEASE_APP_CLIENT_ID: ${{ secrets.RELEASE_APP_CLIENT_ID }}

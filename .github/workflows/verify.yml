@@ -42,7 +42,24 @@ jobs:
         with:
           node-version-file: .node-version
 
-      - run: node --test "tests/*.test.mjs"
+      # Node's built-in coverage, so no package is installed. The gate is the
+      # OpenSSF Silver `test_statement_coverage80` bar; the measured figure is
+      # higher, so a drop below it is a real loss of tests.
+      - run: >-
+          node --test --experimental-test-coverage
+          --test-coverage-include="scripts/**" --test-coverage-include="evals/**"
+          --test-coverage-lines=80 --test-coverage-branches=80 --test-coverage-functions=80
+          "tests/*.test.mjs"
+
+      # The coding standard: .editorconfig, enforced on every tracked file the
+      # repository itself writes (vendored and generated files are skipped).
+      # The action only installs the binary onto PATH, so the version is pinned here.
+      - uses: editorconfig-checker/action-editorconfig-checker@51f63319f592f97930c73d9c46184d20bd206393 # v3.0.0
+        with:
+          version: v4.0.2
+      # -disable-indent-size: Markdown list continuations are indented to the
+      # marker width (3 spaces under `1.`), which is valid Markdown.
+      - run: editorconfig-checker -disable-indent-size -exclude '^design/(source/|tokens\.css|SHA256SUMS)|\.jsonl$|package-lock\.json$|^LICENSES/'
 
       # The harness's own tests: the hooks that guard every Bash, Write and Edit call
       # (a broken one blocks them all, so they fail closed) and the settings that
