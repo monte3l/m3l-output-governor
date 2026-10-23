@@ -157,6 +157,7 @@ effort.
 
 ```zsh
 node --test "tests/*.test.mjs"                    # unit tests
+node --test --experimental-test-coverage --test-coverage-include="scripts/**" --test-coverage-include="evals/**" --test-coverage-lines=80 --test-coverage-branches=80 --test-coverage-functions=80 "tests/*.test.mjs"   # the same, with the coverage gate CI enforces
 claude plugin validate --strict .                 # manifest (CI uses the version pinned in .github/ci-tools)
 node design/source/docs-kit/build.mjs --check     # docs site gate: links, page coverage, design checksums, doc-versus-code parity
 node design/source/docs-kit/build.mjs --out _site # build the docs site locally

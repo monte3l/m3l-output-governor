@@ -28,6 +28,15 @@ Report a suspected security vulnerability privately. See
 | `Signed-off-by:` trailer (`git commit -s`) | Developer Certificate of Origin: you may submit this |
 | GPG- or SSH-signed | The `main` ruleset rejects unsigned commits |
 
+## Coding standards
+
+| Standard | How it is enforced |
+| --- | --- |
+| `.editorconfig`: UTF-8, LF, two-space indent, final newline, no trailing whitespace | The `checks` lane of `verify.yml` runs `editorconfig-checker` over every tracked file this repository writes. Vendored `design/source/`, `design/tokens.css` and `design/SHA256SUMS`, committed `*.jsonl` runs and lockfiles are skipped |
+| ES modules only: no `require`, no `module.exports` | `.claude/hooks/guard-no-commonjs.mjs` refuses the write |
+| No dependency | The repository has no root `package.json`. Scripts are plain Node `.mjs` |
+| Statement, branch and function coverage of at least 80% over `scripts/` and `evals/` | The `checks` lane runs Node's built-in coverage with those thresholds |
+
 ## Pull requests
 
 1. Branch off `main` as `feat/<slug>` or `fix/<slug>`.
