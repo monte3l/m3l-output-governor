@@ -30,7 +30,7 @@ Scripts are plain Node `.mjs`. The README is the user-facing spec.
 | Command | What it does |
 | --- | --- |
 | `node --test "tests/*.test.mjs"` | Runs the unit tests. Pass a file path to run one. A bare `tests/` directory does not work on Node 24 |
-| `node --test --experimental-test-coverage --test-coverage-include="scripts/**" --test-coverage-include="evals/**" --test-coverage-lines=80 --test-coverage-branches=80 --test-coverage-functions=80 "tests/*.test.mjs"` | The unit tests with the 80% coverage gate that `verify.yml` enforces (OpenSSF Silver). It measures about 90% lines today. CI also runs `editorconfig-checker -disable-indent-size` over tracked files, skipping `design/source/`, `design/tokens.css`, `design/SHA256SUMS`, `*.jsonl` and lockfiles |
+| `node --test --experimental-test-coverage --test-coverage-include="scripts/**" --test-coverage-include="evals/**" --test-coverage-lines=80 --test-coverage-branches=80 --test-coverage-functions=80 "tests/*.test.mjs"` | The unit tests with the 80% coverage gate that `verify.yml` enforces (OpenSSF Silver). It measures about 90% lines today. CI also runs `editorconfig-checker -disable-indent-size` over tracked files, skipping `design/source/`, `design/tokens.css`, `design/SHA256SUMS`, `LICENSES/`, `*.jsonl` and lockfiles |
 | `claude plugin validate --strict .` | Checks the plugin manifest. CI runs the Claude Code version pinned in `.github/ci-tools/` (`npm ci --prefix .github/ci-tools`, then put its `node_modules/.bin` first on `PATH`) |
 | `node design/source/docs-kit/build.mjs --check` | The docs site gate (writes nothing): links, every tracked `*.md` is a page or excluded with a reason, `design/SHA256SUMS`, the `design/local/` CSS rule, and `scripts/doc-parity.mjs`. CI runs it in `verify.yml` |
 | `node design/source/docs-kit/build.mjs --out _site` | Builds the site locally. `_site/` is gitignored |
@@ -136,7 +136,13 @@ Git workflow, enforced by the hooks above and by the `main` ruleset:
   than the author, and is merged with a merge commit, never squashed.
 - **Commit with `git commit -s`** (the `dco` lane of `verify.yml` needs a `Signed-off-by`)
   and with a signature (the ruleset rejects unsigned commits). Conventional Commits, a
-  lowercase imperative subject, a prose body.
+  lowercase imperative subject, a prose body. `commit-lint.yml` checks the PR title and
+  every non-merge commit subject on the branch, so a bad subject needs a new commit, not a
+  retitled PR.
+- **Releases are release-please's job.** `release.yml` (with `release-please-config.json`)
+  bumps `.claude-plugin/plugin.json` `version`, writes `CHANGELOG.md` from the commits, and
+  tags `m3l-output-governor--vX.Y.Z` as a draft. Never hand-edit either file's version or
+  release sections. See "Releasing" in `CONTRIBUTING.md`.
 - **Never force-push, never add a dependency, never hand-edit `design/source/`.**
 - **Never write CommonJS, a secret or an `.env` file**; the hooks refuse them, from the
   Write and Edit tools and from Bash.
@@ -170,6 +176,8 @@ Git workflow, enforced by the hooks above and by the `main` ruleset:
   `design/source`, `docs/` and `plugin-evals/` are left out of the P4 fixture
   (`EXCLUDED` in `evals/p4.mjs`), so a docs-site file or a plugin-eval case
   never changes what a live run sees.
+- `reuse.yml` checks licensing against `REUSE.toml`, which covers `**` as MIT, so new
+  files need no SPDX header. A third-party file needs its own annotation there.
 - Bold, never italics or underlines; a GitHub alert matched to severity, at most
   two in a row, `[!CAUTION]` only for data loss or anything irreversible; plain
   direct sentences; tables for tabular data.
