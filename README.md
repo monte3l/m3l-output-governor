@@ -23,17 +23,43 @@ sessions instead of guessed. It never changes what Claude sees, says or does.
 You need [Claude Code](https://docs.claude.com/en/docs/claude-code/overview)
 (see [Requirements](#requirements) for versions).
 
-1. Install the plugin from the monte3l catalog:
+1. Install the plugin from the monte3l catalog. From your shell:
 
+   ```bash
+   claude plugin marketplace add monte3l/m3l-plugins
+   claude plugin install m3l-output-governor@monte3l
    ```
+
+   Or inside a Claude Code session:
+
+   ```text
    /plugin marketplace add monte3l/m3l-plugins
    /plugin install m3l-output-governor@monte3l
    ```
 
+   To add the marketplace and install in one step, use
+   `claude plugin install m3l-output-governor --marketplace monte3l/m3l-plugins`
+   (Claude Code 2.1.292 or newer) or
+   `/plugin install m3l-output-governor --marketplace monte3l/m3l-plugins`
+   (2.1.275 or newer).
+
+   The shell form installs at user scope unless you pass `--scope project` or
+   `--scope local`. The session form opens the plugin's details and asks you to
+   pick a scope.
+
    If you installed it before 1.0.0 from the `monte3l-output-governor`
-   marketplace, remove that marketplace first with
-   `claude plugin marketplace remove monte3l-output-governor`, so the plugin is
-   not installed twice. The plugin name does not change. Its id becomes
+   marketplace, remove that marketplace first, so the plugin is not installed
+   twice:
+
+   ```bash
+   claude plugin marketplace remove monte3l-output-governor
+   ```
+
+   ```text
+   /plugin marketplace remove monte3l-output-governor
+   ```
+
+   The plugin name does not change. Its id becomes
    `m3l-output-governor@monte3l`.
 
 2. In a project you have used with Claude Code, run
@@ -42,15 +68,28 @@ You need [Claude Code](https://docs.claude.com/en/docs/claude-code/overview)
 3. Read `thinkingShareOfOutput` against [Levers](#levers) to see which one
    applies to you. On the author's sessions it was 36%.
 
-To try it from a checkout without installing, run
-`claude --plugin-dir /path/to/m3l-output-governor`. To run a specific release,
-check out its tag, `m3l-output-governor--vX.Y.Z`, first.
+## Settings
+
+This plugin declares no options, so there is nothing to configure at install.
+The settings that change your output tokens belong to Claude Code itself, and
+[Levers](#levers) lists them.
+
+## Manage the plugin
+
+| Task | From your shell | Inside a session |
+| --- | --- | --- |
+| Update | `claude plugin update m3l-output-governor@monte3l` | `/plugin`, then **Installed**, the plugin, **Update now** |
+| Update automatically | Not available | `/plugin`, then **Marketplaces**, `monte3l`, **Enable auto-update** |
+| Turn off or on | `claude plugin disable m3l-output-governor@monte3l`, then `claude plugin enable m3l-output-governor@monte3l` | `/plugin disable m3l-output-governor@monte3l`, then `/plugin enable m3l-output-governor@monte3l` |
+| Uninstall | `claude plugin uninstall m3l-output-governor@monte3l` | `/plugin uninstall m3l-output-governor@monte3l` |
+| Run a checkout for one session | `claude --plugin-dir /path/to/m3l-output-governor` | Not available |
+| Run an older release | Check out its tag, `m3l-output-governor--vX.Y.Z`, then use `--plugin-dir` | Not available |
 
 `monte3l` is not an official Anthropic marketplace, so Claude Code does not
-update its plugins automatically. To get a new release, run
-`claude plugin update m3l-output-governor@monte3l`. Claude Code keeps you on the
-installed version until the plugin's `version` changes. See
-[versions and updates](https://code.claude.com/docs/en/plugins/loading).
+update its plugins automatically unless you turn auto-update on. Claude Code
+keeps you on the installed version until the plugin's `version` changes. See
+[versions and updates](https://code.claude.com/docs/en/plugins/loading). After a
+change inside a session, run `/reload-plugins` to apply it.
 
 ## How it works
 
