@@ -42,6 +42,12 @@ function withRepo(branch, fn) {
 const status = (command, cwd) =>
   spawnSync("node", [HOOK], { input: JSON.stringify({ tool_name: "Bash", tool_input: { command }, cwd }), encoding: "utf8" }).status;
 
+// Claude Code 2.1.314: hooks matching `Bash` also run on Monitor's shell commands. Monitor's
+// input is { description, timeout_ms, command?, ws? } (agent-sdk/typescript); the guard reads
+// `tool_input.command` without checking `tool_name`, and these cases pin that.
+const monitorStatus = (toolInput, cwd) =>
+  spawnSync("node", [HOOK], { input: JSON.stringify({ tool_name: "Monitor", tool_input: toolInput, cwd }), encoding: "utf8" }).status;
+
 // Secret-shaped fixtures are assembled at runtime, never written as one literal.
 const AWS_ID = "AKIA" + "IOSFODNN7EXAMPLE";
 const PAT = ["ghp", "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8"].join("_");
@@ -55,6 +61,24 @@ test("naming a secrets path is refused, on any branch", () => {
     ]) {
       assert.equal(status(command, dir), 2, command);
     }
+  });
+});
+
+test("a Monitor shell command is checked like a Bash command", () => {
+  withRepo("feat/x", (dir) => {
+    const monitor = (command) => ({ command, description: "watch", timeout_ms: 1000 });
+    assert.equal(monitorStatus(monitor("tail -f .env"), dir), 2, "names a secrets path");
+    assert.equal(monitorStatus(monitor(`echo ${AWS_ID}`), dir), 2, "carries a secret literal");
+    assert.equal(monitorStatus(monitor("tail -f README.md"), dir), 0, "an ordinary watch");
+  });
+  withRepo("main", (dir) => {
+    assert.equal(monitorStatus({ command: "touch scripts/x.mjs", description: "w", timeout_ms: 1000 }, dir), 2, "writes a guarded directory on main");
+  });
+});
+
+test("a Monitor WebSocket watch has no command and passes", () => {
+  withRepo("feat/x", (dir) => {
+    assert.equal(monitorStatus({ ws: { url: "wss://example.com/stream" }, description: "w", timeout_ms: 1000 }, dir), 0);
   });
 });
 
