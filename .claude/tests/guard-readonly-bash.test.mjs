@@ -178,6 +178,27 @@ test("a project read-only agent is held to the allowlist", () => {
   }
 });
 
+// Claude Code 2.1.314: hooks matching `Bash` also run on Monitor's shell commands, whose input
+// carries the command in `tool_input.command` like Bash's does.
+const monitor = (command, extra = {}) => ({
+  tool_name: "Monitor",
+  tool_input: { command, description: "watch", timeout_ms: 1000 },
+  ...extra,
+});
+
+test("a project read-only agent's Monitor command is held to the allowlist", () => {
+  for (const agent of ["code-reviewer", "silent-failure-hunter", "Explore"]) {
+    assert.equal(run(monitor("git status", { agent_type: agent })), 0, agent);
+    assert.equal(run(monitor("rm -rf x", { agent_type: agent })), 2, agent);
+  }
+  assert.equal(run(monitor("rm -rf x")), 0, "main session: not restricted");
+});
+
+test("a Monitor WebSocket watch has no command and is not blocked", () => {
+  const payload = { tool_name: "Monitor", tool_input: { ws: { url: "wss://example.com" }, description: "w", timeout_ms: 1000 }, agent_type: "Explore" };
+  assert.equal(run(payload), 0);
+});
+
 test("the main session and other agents are not restricted", () => {
   assert.equal(run(bash("rm -rf x")), 0, "main session: no agent_type");
   for (const agent of ["general-purpose", "plugin-dev:plugin-validator", "claude-security:patch-generator"]) {
