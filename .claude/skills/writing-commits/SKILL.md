@@ -1,9 +1,9 @@
 ---
 name: writing-commits
 description: >-
-  Inspect the staged diff, select the Conventional Commit type, draft an
-  imperative subject ≤70 chars, decide whether a body is needed, write it as
-  prose, add Co-Authored-By when AI-assisted, then commit signed off and
+  Inspects the staged diff, selects the Conventional Commit type, drafts an
+  imperative subject ≤70 chars, decides whether a body is needed, writes it as
+  prose, adds Co-Authored-By when AI-assisted, then commits signed off and
   signed. Use for "commit this", "write a commit", "stage and commit".
 ---
 

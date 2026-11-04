@@ -1,9 +1,9 @@
 ---
 name: triaging-ci
 description: >-
-  Diagnose a CI failure via gh CLI: resolve the failing run, fetch logs, map the
-  failure to its workflow and job, report root cause plus the exact local repro
-  command, and present 3-5 fix options. Use for /triaging-ci, "why did CI fail",
+  Diagnoses a CI failure via gh CLI: resolves the failing run, fetches logs,
+  maps the failure to its workflow and job, reports root cause plus the exact
+  local repro command, and presents 3-5 fix options. Use for /triaging-ci, "why did CI fail",
   "CI is failing", "the build is red", "find the root cause of a failing
   build", "debug the CI run", or a specific run ID/URL. GitHub stance: gh CLI.
 ---

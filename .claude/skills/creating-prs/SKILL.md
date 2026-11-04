@@ -1,8 +1,9 @@
 ---
 name: creating-prs
 description: >-
-  Verify quality gates, push the branch, open a PR with a Conventional Commit
-  title and the repo's PR template body, then report its URL and check status.
+  Verifies quality gates, pushes the branch, opens a PR with a Conventional
+  Commit title and the repo's PR template body, then reports its URL and check
+  status.
   Use for /creating-prs, "open a PR", "create a pull request", "ship this for
   review", or after finishing a fix. Requires gh CLI auth.
 ---
