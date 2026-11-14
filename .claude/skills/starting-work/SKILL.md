@@ -55,7 +55,7 @@ Docs, `.github/` and `.claude/` changes are not guarded but still need a PR.
   | --- | --- |
   | `feat/<slug>` | New behaviour |
   | `fix/<slug>` | Bug fix |
-  | `ci/<slug>` | Workflows, `.github/ci-tools/` |
+  | `ci/<slug>` | Workflows, `tools/ci/` |
   | `chore/<slug>` | Tooling, config, `.claude/`, design sync |
   | `docs/<slug>` | Documentation only |
 

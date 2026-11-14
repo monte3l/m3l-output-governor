@@ -5,8 +5,8 @@ node_modules/
 tmp/
 evals/.results/
 plugin-evals/results/
-.github/ci-tools/node_modules/
+tools/ci/node_modules/
 _site/
-.github/deploy-tools/node_modules/
+tools/deploy/node_modules/
 .groundwork/
 .claude/skills/customize/

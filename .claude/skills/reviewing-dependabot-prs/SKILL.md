@@ -19,8 +19,8 @@ always held for a human look, checks or no checks.
 ## Repo facts that change a decision
 
 - **Ecosystems** (`.github/dependabot.yml`): `github-actions` at `/` (weekly,
-  7-day cooldown), `npm` for `/.github/ci-tools` (pins
-  `@anthropic-ai/claude-code`) and `npm` for `/.github/deploy-tools` (pins
+  7-day cooldown), `npm` for `/tools/ci` (pins
+  `@anthropic-ai/claude-code`) and `npm` for `/tools/deploy` (pins
   wrangler), both with a 1-day cooldown. All use the `ci` commit prefix, so
   titles read `ci: bump <package> from <old> to <new>`.
 - **A `ci-tools` bump changes the Claude Code version CI validates against**
