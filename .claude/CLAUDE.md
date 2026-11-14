@@ -20,8 +20,8 @@ sessions, Bash results of 8,000 characters or more carried about 2% of billed in
 `scripts/measure.mjs` on a workload that clears 10% at the planned gate.
 
 There is no package.json at the repository root, no build and no runtime dependency (the only
-`package.json` files are in `.github/ci-tools/`, which pins the Claude Code that CI uses, and
-`.github/deploy-tools/`, which pins the wrangler that deploys the docs site).
+`package.json` files are in `tools/ci/`, which pins the Claude Code that CI uses, and
+`tools/deploy/`, which pins the wrangler that deploys the docs site).
 Scripts are plain Node `.mjs`. The README is the user-facing spec.
 `UNVERIFIED.md` records what was confirmed by a live check and what is open.
 
@@ -31,7 +31,7 @@ Scripts are plain Node `.mjs`. The README is the user-facing spec.
 | --- | --- |
 | `node --test "tests/*.test.mjs"` | Runs the unit tests. Pass a file path to run one. A bare `tests/` directory does not work on Node 24 |
 | `node --test --experimental-test-coverage --test-coverage-include="scripts/**" --test-coverage-include="evals/**" --test-coverage-lines=80 --test-coverage-branches=80 --test-coverage-functions=80 "tests/*.test.mjs"` | The unit tests with the 80% coverage gate that `verify.yml` enforces (OpenSSF Silver). It measures about 90% lines today. CI also runs `editorconfig-checker -disable-indent-size` over tracked files, skipping `design/source/`, `design/tokens.css`, `design/SHA256SUMS`, `LICENSES/`, `*.jsonl` and lockfiles |
-| `claude plugin validate --strict .` | Checks the plugin manifest. CI runs the Claude Code version pinned in `.github/ci-tools/` (`npm ci --prefix .github/ci-tools`, then put its `node_modules/.bin` first on `PATH`) |
+| `claude plugin validate --strict .` | Checks the plugin manifest. CI runs the Claude Code version pinned in `tools/ci/` (`npm ci --prefix tools/ci`, then put its `node_modules/.bin` first on `PATH`) |
 | `node design/source/docs-kit/build.mjs --check` | The docs site gate (writes nothing): links, every tracked `*.md` is a page or excluded with a reason, `design/SHA256SUMS`, the `design/local/` CSS rule, and `scripts/doc-parity.mjs`. CI runs it in `verify.yml` |
 | `node design/source/docs-kit/build.mjs --out _site` | Builds the site locally. `_site/` is gitignored |
 | `node scripts/doc-parity.mjs` | Only the doc-versus-code parity checks. Prints `ok` or each drift, exit 1 on drift |
@@ -54,10 +54,10 @@ Scripts are plain Node `.mjs`. The README is the user-facing spec.
 | `plugin-evals/` | `claude plugin eval` cases for the skill (a `prompt.md` and `graders/*.md` each), found through `experimental.evals` in `plugin.json` because `evals/` holds the P4 files. Free graders only (`regex`, `tool_used`). A run is billed and its sandbox cannot read the home directory, so it cannot reach the transcript path (`UNVERIFIED.md` item 5). Results land in `plugin-evals/results/`, gitignored |
 | `.claude-plugin/` | The plugin manifest. There is no `marketplace.json`: the plugin is listed in the `monte3l/m3l-plugins` catalog. One skill; no hooks, mods or output styles |
 | `.claude/` | The working harness for this repository: settings, hooks, agents, rules and skills for the people and agents who change it. It is not the plugin's own surface, which stays at the root (`skills/`, `.claude-plugin/`). See "Harness" below |
-| `.github/ci-tools/` | `package.json` and lockfile pinning `@anthropic-ai/claude-code`; the `plugin` lane of `verify.yml` installs it with its install script (an accepted risk, see `SECURITY.md`). Dependabot proposes bumps after a one-day cooldown |
+| `tools/ci/` | `package.json` and lockfile pinning `@anthropic-ai/claude-code`; the `plugin` lane of `verify.yml` installs it with its install script (an accepted risk, see `SECURITY.md`). Dependabot proposes bumps after a one-day cooldown |
 | `scripts/doc-parity.mjs` | A kit parity module (listed in `docs.config.mjs` `parity`). Compares the README with `measure.mjs` flags, the gate default and the JSON field paths (flattened from `measure()` run on a synthetic transcript), with `p4.mjs` flags, defaults, task count, per-run caps and the dry-run plan, and with the result-row key count. It recomputes the committed `evals/p4-2026-10-19*.jsonl` runs through `summarize.mjs` and asserts every figure in `NUMBER_TABLE` (README Levers, `evals/results.md`, `UNVERIFIED.md` items 14, 17 and 19). It also checks the skill invocation and `disable-model-invocation`. `tests/doc-parity.test.mjs` covers its pure helpers |
 | `docs.config.mjs` | The docs site config: pages, nav groups, `exclude` (each with a reason), the manifest, and the parity module |
-| `.github/deploy-tools/`, `.github/workflows/docs.yml`, `docs-live.yml` | Cloudflare Workers Static Assets deploy (Worker `m3l-output-governor-docs`, `output-governor.monte3l.com`), the post-deploy smoke test and the daily live check with `--metadata` |
+| `tools/deploy/`, `.github/workflows/docs.yml`, `docs-live.yml` | Cloudflare Workers Static Assets deploy (Worker `m3l-output-governor-docs`, `output-governor.monte3l.com`), the post-deploy smoke test and the daily live check with `--metadata` |
 | `.github/workflows/labeler.yml`, `.github/labeler.yml` | Labels each PR by area (`area:ci`, `docs`, `design`, `harness` from the org blueprint; `area:plugin`, `area:evals` specific to this repo) with `actions/labeler`. Labels only, not a required check. The labels already exist on GitHub, so a new rule needs its label created first |
 | `docs/` | `GOVERNANCE.md`, `ROADMAP.md`, `architecture.md` and `assurance-case.md`: the OpenSSF Silver and Baseline documents. Site pages, and left out of the P4 fixture. `.bestpractices.json` at the root is the self-assessment that cites them |
 | `design/README.md` | The m3l-design marker, vendored tier. `design/source/`, `tokens.css` and `SHA256SUMS` are the verbatim copy |

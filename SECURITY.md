@@ -75,7 +75,7 @@ its Security tab. None has been published so far.
 | Tool | What it checks | Threshold |
 | --- | --- | --- |
 | Dependency Review (`dependency-review.yml`) | Dependencies a pull request adds or changes: known vulnerabilities and licenses | Fails the pull request on a `high` or `critical` vulnerability, or a license outside the allow list |
-| Dependabot | Pinned Actions and the CI tools in `.github/ci-tools/` and `.github/deploy-tools/` | A bump arrives as a pull request after a cooldown. A `critical` or `high` advisory is merged as soon as its checks pass |
+| Dependabot | Pinned Actions and the CI tools in `tools/ci/` and `tools/deploy/` | A bump arrives as a pull request after a cooldown. A `critical` or `high` advisory is merged as soon as its checks pass |
 | CodeQL (default setup) | Static analysis of the JavaScript and the workflows, on every push and pull request | A required check, so a finding blocks the merge |
 | zizmor and actionlint | The workflows | Fail the `workflow-lint` check |
 
@@ -162,7 +162,7 @@ resolves to is the one the tag points at.
 
 > [!NOTE]
 > Accepted risk: the `plugin` lane of `verify.yml` installs
-> `@anthropic-ai/claude-code` from `.github/ci-tools/` **with** its install script, because the script fetches
+> `@anthropic-ai/claude-code` from `tools/ci/` **with** its install script, because the script fetches
 > the native binary. The lockfile pins the package by integrity hash, Dependabot
 > proposes bumps after a one-day cooldown, and the job holds read-only
 > permissions and no secrets.

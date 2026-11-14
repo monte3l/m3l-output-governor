@@ -41,7 +41,7 @@ The staged diff is the source of truth; the log prevents duplicate subjects.
 | `fix:`      | A bug in `scripts/`, `evals/` or the plugin is corrected         |
 | `test:`     | Tests only, no behaviour change                                  |
 | `docs:`     | README, CONTRIBUTING, UNVERIFIED.md, `evals/results.md`, CHANGELOG |
-| `ci:`       | GitHub Actions workflows and `.github/ci-tools/` only            |
+| `ci:`       | GitHub Actions workflows and `tools/ci/` only            |
 | `chore:`    | Tooling, config, `.claude/`, vendored `design/` syncs            |
 | `refactor:` | Internal restructuring with no behaviour change                  |
 

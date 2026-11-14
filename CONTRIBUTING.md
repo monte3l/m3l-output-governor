@@ -54,7 +54,7 @@ run the commands in the
 ## Dependencies
 
 The plugin and its scripts use no package. The only packages are the CI tools in
-`.github/ci-tools/` (the pinned Claude Code) and `.github/deploy-tools/` (the
+`tools/ci/` (the pinned Claude Code) and `tools/deploy/` (the
 pinned wrangler), each pinned by a committed lockfile and installed with `npm ci`.
 Every GitHub Action is pinned by commit SHA, and a repository setting allows only
 a short list of them. Dependabot proposes bumps weekly after a cooldown, and

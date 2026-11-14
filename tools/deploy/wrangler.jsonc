@@ -6,7 +6,7 @@
   "name": "m3l-output-governor-docs",
   "compatibility_date": "2026-09-27",
   "assets": {
-    // Resolved relative to this file (.github/deploy-tools/), so it points at
+    // Resolved relative to this file (tools/deploy/), so it points at
     // the _site/ directory the workflow's build job writes at the repo root.
     "directory": "../../_site",
     "html_handling": "auto-trailing-slash",

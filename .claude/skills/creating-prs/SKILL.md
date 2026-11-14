@@ -46,8 +46,8 @@ node design/source/docs-kit/build.mjs --check
 command -v reuse >/dev/null && reuse lint   # only if reuse is installed
 ```
 
-CI uses the Claude Code version pinned in `.github/ci-tools/`
-(`npm ci --prefix .github/ci-tools`, then put its `node_modules/.bin` first on
+CI uses the Claude Code version pinned in `tools/ci/`
+(`npm ci --prefix tools/ci`, then put its `node_modules/.bin` first on
 `PATH`); a different local version can disagree with CI. Fix everything
 before pushing. If the change touched a flag, default, output field or
 quoted number, confirm the README, `evals/results.md` or `UNVERIFIED.md`

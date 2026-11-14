@@ -10,7 +10,7 @@ name: Verify
 # `plugin` (Claude Code), `dco`.
 #
 # Only the `plugin` lane installs anything. Claude Code comes from
-# .github/ci-tools/, whose committed lockfile pins it by integrity hash. Its
+# tools/ci/, whose committed lockfile pins it by integrity hash. Its
 # install script runs (it fetches the native binary), so every lane holds
 # read-only permissions and no secrets. `claude plugin validate` runs without
 # an API key. The docs kit's `--check` needs only Node and git. The live eval
@@ -85,9 +85,9 @@ jobs:
         with:
           node-version-file: .node-version
 
-      - run: npm ci --prefix .github/ci-tools
+      - run: npm ci --prefix tools/ci
 
-      - run: echo "$PWD/.github/ci-tools/node_modules/.bin" >> "$GITHUB_PATH"
+      - run: echo "$PWD/tools/ci/node_modules/.bin" >> "$GITHUB_PATH"
 
       - run: claude plugin validate --strict .
 

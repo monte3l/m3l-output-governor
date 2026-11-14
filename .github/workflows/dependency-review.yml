@@ -31,11 +31,11 @@ jobs:
           # that this project can accept its terms.
           allow-licenses: MIT, MIT-0, Apache-2.0, BSD-2-Clause, BSD-3-Clause, ISC, 0BSD, CC0-1.0, Unlicense, CC-BY-4.0, BlueOak-1.0.0, Artistic-2.0, CC-BY-3.0
           # BlueOak-1.0.0, Artistic-2.0 and CC-BY-3.0 cover the dependency tree
-          # of wrangler in .github/deploy-tools. All are permissive; this repo
+          # of wrangler in tools/deploy. All are permissive; this repo
           # never redistributes them.
           #
           # Per-package, not per-license: the pinned Claude Code CLI in
-          # .github/ci-tools (verify.yml) and its platform binaries carry
+          # tools/ci (verify.yml) and its platform binaries carry
           # Anthropic's proprietary licence ("SEE LICENSE IN ..."). They are
           # only installed in a CI job and never redistributed.
           # Also per-package: wrangler pulls in sharp's prebuilt libvips

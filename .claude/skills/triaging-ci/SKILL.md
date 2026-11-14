@@ -58,7 +58,7 @@ Match the failing workflow and job, then reproduce locally:
 | Workflow / job | Local repro |
 | --- | --- |
 | `verify.yml` / `checks` | `node --test "tests/*.test.mjs"` and `node design/source/docs-kit/build.mjs --check` |
-| `verify.yml` / `plugin` | `npm ci --prefix .github/ci-tools`, put `.github/ci-tools/node_modules/.bin` first on `PATH`, then `claude plugin validate --strict .` |
+| `verify.yml` / `plugin` | `npm ci --prefix tools/ci`, put `tools/ci/node_modules/.bin` first on `PATH`, then `claude plugin validate --strict .` |
 | `verify.yml` / `dco` | `git log --format='%h %an <%ae> %(trailers:key=Signed-off-by)' origin/main..HEAD`; fix with `git commit --amend -s` or `git rebase --signoff origin/main` |
 | `verify.yml` / `verify` | Aggregate job; it fails when a lane above failed, so triage that lane |
 | `reuse.yml` | `reuse lint` |
