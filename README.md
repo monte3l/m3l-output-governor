@@ -271,8 +271,8 @@ and their result rows are a recorded experiment, not part of the contract.
 | Minor | A new flag, output field or skill, with existing ones unchanged |
 | Patch | A fix, or a docs or CI change, with no change to the contract |
 
-Each release is a signed tag named `m3l-output-governor--vX.Y.Z` and a GitHub
-release, and `CHANGELOG.md` lists what changed. How a release is cut is in
+Each release is a tag named `m3l-output-governor--vX.Y.Z`, on a signed commit,
+and a GitHub release, and `CHANGELOG.md` lists what changed. How a release is cut is in
 [`CONTRIBUTING.md`](CONTRIBUTING.md).
 
 ## License
