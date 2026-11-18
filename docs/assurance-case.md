@@ -68,7 +68,7 @@ credentials. The architecture is in [Architecture](architecture.md).
 | Fail-safe defaults | The skill is user-invoked only. `p4.mjs` is a dry run until `--live` and stops at the first error row | `scripts/doc-parity.mjs` checks `disable-model-invocation`. `tests/evals.test.mjs` |
 | Complete mediation | Every change goes through the `main` ruleset | The branch ruleset, with an empty bypass list |
 | Open design | Everything is public, and the script is short enough to read before installing | The README says so |
-| Separation of privilege | A merge needs a person other than the author, and a release needs the release workflow and a signed tag | Ruleset, `release.yml` |
+| Separation of privilege | A merge needs a person other than the author, and a release needs the release workflow, and its tag points at a signed commit | Ruleset, `release.yml` |
 | Least common mechanism | The plugin shares no state with other plugins | The manifest |
 | Psychological acceptability | The report labels each figure exact or estimated | The README and `.claude/CLAUDE.md` |
 

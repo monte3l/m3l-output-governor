@@ -131,8 +131,9 @@ anything was released or deployed with it.
 
 ## Verifying releases
 
-A release has a signed git tag named `m3l-output-governor--vX.Y.Z`. From the
-release after `1.0.0`, it also carries a source tarball
+A release has a git tag named `m3l-output-governor--vX.Y.Z` on a signed commit.
+Only the tag of `1.0.0` is itself signed: the release workflow creates later
+tags as lightweight tags. From the release after `1.0.0`, it also carries a source tarball
 (`m3l-output-governor-X.Y.Z.tar.gz`) and its Sigstore bundle
 (`m3l-output-governor-X.Y.Z.tar.gz.sigstore.json`). `1.0.0` was published
 without assets, so only its tag can be verified.
@@ -150,11 +151,12 @@ A pass means the file is byte-for-byte what the release workflow built from this
 repository, and `--signer-workflow` pins the expected identity: that workflow
 file in this repository, and nothing else.
 
-**Identity of the tag's author.** Check the tag's signature against the
-maintainer's public key, which is on their GitHub account:
+**Identity of the commit's author.** Check the signature of the commit the tag
+points at against the maintainer's public key, which is on their GitHub
+account. This works for every tag, signed or lightweight:
 
 ```zsh
-git tag -v m3l-output-governor--vX.Y.Z
+git verify-commit m3l-output-governor--vX.Y.Z^{commit}
 ```
 
 Installing through the catalog pins the same tag and commit, so the commit it
