@@ -29,8 +29,9 @@ jobs:
         with:
           persist-credentials: false
       - name: actionlint
-        # Pinned by tag: Dependabot does not track this value, bump it by hand.
-        run: docker run --rm -v "$PWD:/repo" -w /repo rhysd/actionlint:1.7.7 -color
+        # Pinned by tag. Dependabot does not read this value, so bump it by hand.
+        # The org tracks it in monte3l/.github blueprint/pins.json.
+        run: docker run --rm -v "$PWD:/repo" -w /repo rhysd/actionlint:1.7.12 -color
 
   zizmor:
     name: zizmor
@@ -48,8 +49,9 @@ jobs:
           inputs: .github/workflows
           # Pinned: `latest` lets a new zizmor release change what fails, so
           # a repository that passed yesterday can fail with no code change.
-          # Dependabot does not track this value, bump it by hand.
-          version: "1.31.1"
+          # Dependabot does not read this value, so bump it by hand. The org
+          # tracks it in monte3l/.github blueprint/pins.json.
+          version: "1.32.0"
           # Offline audits only, so the job needs no token.
           online-audits: false
           advanced-security: false
