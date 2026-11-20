@@ -76,12 +76,16 @@ dimension the user already settled (e.g. "do it on `fix/foo`").
 
 ### 5 — Act on the confirmed decisions
 
+Start in a worktree off `origin/main`, never a branch switch in the main
+checkout, where the `guard-shared-checkout` hook blocks the commit:
+`EnterWorktree`, or `git worktree add ../<repo>.wt/<branch> -b <branch> origin/main`.
+
 ```bash
-git switch -c <prefix>/<slug>
+git worktree add ../<repo>.wt/<slug> -b <prefix>/<slug> origin/main
 ```
 
-Verify `HEAD` is neither `main` nor detached-on-`main` before handing back; if
-it is, return to Step 4. When **resuming an existing branch**, resync it with
+Verify you are in the new worktree, on a branch that is neither `main` nor
+detached-on-`main`, before handing back; if not, return to Step 4. When **resuming an existing branch**, resync it with
 `origin/main` first (the ruleset requires an up-to-date branch).
 
 ### 6 — Hand back
