@@ -2,6 +2,13 @@
 
 Releases are tagged `m3l-output-governor--vX.Y.Z`. The release workflow writes each new section from the Conventional Commits since the last release. See "Releasing" in CONTRIBUTING.md.
 
+## [1.0.1](https://github.com/monte3l/m3l-output-governor/compare/m3l-output-governor--v1.0.0...m3l-output-governor--v1.0.1) (2026-11-20)
+
+
+### Bug Fixes
+
+* run the worktree guard under a symlink or a spaced path ([4f676cf](https://github.com/monte3l/m3l-output-governor/commit/4f676cfb702eb6931d5c946a688227220b6c266e))
+
 ## 1.0.0 (2026-10-20)
 
 The first release. It measures where Claude Code's output tokens go, from session transcripts, and records one paired eval of the built-in Concise output style. The public contract is the `measure.mjs` flags, exit codes and output fields, and the skill `/m3l-output-governor:measure`.
