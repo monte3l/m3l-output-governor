@@ -145,8 +145,8 @@ if (isEntryPoint()) {
   if (branch !== undefined) {
     process.stderr.write(
       `[guard-bash-writes] Blocked: this command ${branch} while HEAD is \`main\`.\n\n` +
-        `Implementation work runs on an isolated branch. Run ` +
-        `\`git switch -c feat/<slug>\` first, as its own command.\n`,
+        `Implementation work runs in a worktree off origin/main. Use ` +
+        `EnterWorktree, or \`git worktree add ../<repo>.wt/<branch> -b <branch> origin/main\`.\n`,
     );
     process.exit(2);
   }
