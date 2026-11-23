@@ -2,6 +2,13 @@
 
 Releases are tagged `m3l-output-governor--vX.Y.Z`. The release workflow writes each new section from the Conventional Commits since the last release. See "Releasing" in CONTRIBUTING.md.
 
+## [1.0.2](https://github.com/monte3l/m3l-output-governor/compare/m3l-output-governor--v1.0.1...m3l-output-governor--v1.0.2) (2026-11-23)
+
+
+### Bug Fixes
+
+* **harness:** adopt the org secret and double-background guards ([684fe00](https://github.com/monte3l/m3l-output-governor/commit/684fe009deff3795854f374ce5041d34ea7dcd20))
+
 ## [1.0.1](https://github.com/monte3l/m3l-output-governor/compare/m3l-output-governor--v1.0.0...m3l-output-governor--v1.0.1) (2026-11-20)
 
 
