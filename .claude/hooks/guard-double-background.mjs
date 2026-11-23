@@ -76,8 +76,9 @@ async function readStdin() {
 }
 
 // Kept as a duplicated, self-contained block in every hook file rather than
-// imported from a shared helper, so this check has no import that could fail.
-// `import.meta.url` is symlink-resolved but
+// imported from a shared helper -- each hook stays a single independent
+// file, which keeps this project's hook count easy to reason about against
+// CLAUDE.md's hook budget. `import.meta.url` is symlink-resolved but
 // `process.argv[1]` is not, so comparing them directly would be false under
 // a symlinked invocation path -- and the guard below would then never run,
 // i.e. silently fail open (exit 0) instead of blocking.
@@ -96,10 +97,15 @@ if (isEntryPoint()) {
   try {
     input = JSON.parse(raw);
   } catch {
-    process.exit(0);
+    input = null;
   }
-  // A payload that is not an object names nothing to judge; do not crash on it.
-  if (typeof input !== "object" || input === null) process.exit(0);
+  // A payload that cannot be read cannot be judged, so fail closed. The hook is
+  // registered with onFailure: "block", which covers a crash but not a
+  // deliberate exit 0, and exit 0 means allow.
+  if (typeof input !== "object" || input === null) {
+    process.stderr.write("[guard-double-background] could not read the hook payload; blocking.\n");
+    process.exit(2);
+  }
 
   const command = input.tool_input?.command;
   const runInBackground = input.tool_input?.run_in_background;
