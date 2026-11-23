@@ -29,7 +29,7 @@ jobs:
           fail-on-severity: high
           # Permissive licenses only. Add a license here only after checking
           # that this project can accept its terms.
-          allow-licenses: MIT, MIT-0, Apache-2.0, BSD-2-Clause, BSD-3-Clause, ISC, 0BSD, CC0-1.0, Unlicense, CC-BY-4.0, BlueOak-1.0.0, Artistic-2.0, CC-BY-3.0
+          allow-licenses: MIT, MIT-0, Apache-2.0, BSD-2-Clause, BSD-3-Clause, ISC, 0BSD, CC0-1.0, Unlicense, CC-BY-4.0, BlueOak-1.0.0, Artistic-2.0, CC-BY-3.0, Python-2.0, BSD-2-Clause-Views
           # A copyleft or platform-specific package that is acceptable for a
           # tool the project only runs (never ships) is exempted by package
           # URL, not by adding its license above. Those exemptions are data
