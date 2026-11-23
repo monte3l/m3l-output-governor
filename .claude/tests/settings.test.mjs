@@ -103,15 +103,47 @@ const run = (file, payload, cwd = CLAUDE) =>
     env: { ...process.env, CLAUDE_PROJECT_DIR: join(CLAUDE, "..") },
   }).status;
 
+// A payload that is not a JSON object cannot be judged. The org starters (guard-secret-writes,
+// guard-double-background) fail closed on it: `onFailure: "block"` covers a crash, not a
+// deliberate `exit 0`, and 0 means allow. An object whose fields are odd is judged by the
+// fields it has, so those payloads still exit 0 everywhere.
+const UNREADABLE = ["", "not json", "null", '"str"', "42", "true"];
+const ODD_OBJECTS = [
+  "[]", "{}", '{"tool_input":null}', '{"tool_input":"x"}',
+  '{"tool_input":{"file_path":42,"command":7,"content":{},"new_string":[],"notebook_path":{}}}',
+  '{"agent_type":42,"tool_input":{"command":{}}}', '{"cwd":42,"tool_input":{"command":"ls"}}',
+];
+const FAIL_CLOSED = new Set(["guard-secret-writes.mjs", "guard-double-background.mjs"]);
+
 test("a guard does not crash on a malformed payload", () => {
-  const malformed = [
-    "", "not json", "null", "[]", "{}", '"str"', "42", "true", '{"tool_input":null}', '{"tool_input":"x"}',
-    '{"tool_input":{"file_path":42,"command":7,"content":{},"new_string":[],"notebook_path":{}}}',
-    '{"agent_type":42,"tool_input":{"command":{}}}', '{"cwd":42,"tool_input":{"command":"ls"}}',
-  ];
   for (const file of GUARD_FILES) {
-    for (const payload of malformed) assert.equal(run(file, payload), 0, `${file} on ${payload}`);
+    for (const payload of ODD_OBJECTS) assert.equal(run(file, payload), 0, `${file} on ${payload}`);
+    for (const payload of UNREADABLE) {
+      assert.equal(run(file, payload), FAIL_CLOSED.has(file) ? 2 : 0, `${file} on ${JSON.stringify(payload)}`);
+    }
   }
+});
+
+test("the org starter guards fail closed on a payload they cannot read, and say so", () => {
+  for (const file of FAIL_CLOSED) {
+    assert.ok(GUARD_FILES.includes(file), `${file} is registered`);
+    for (const payload of UNREADABLE) {
+      const r = spawnSync("node", [join(CLAUDE, "hooks", file)], { input: payload, encoding: "utf8" });
+      assert.equal(r.status, 2, `${file} on ${JSON.stringify(payload)}`);
+      assert.match(r.stderr, /could not read the hook payload; blocking/, file);
+    }
+  }
+});
+
+test("the secret guard reads a notebook edit and blocks a token in it", () => {
+  const token = ["gh", "p_", "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8"].join("");
+  const notebook = (new_source) => ({
+    tool_name: "NotebookEdit",
+    tool_input: { notebook_path: join(CLAUDE, "..", "x.ipynb"), new_source },
+    cwd: join(CLAUDE, ".."),
+  });
+  assert.equal(run("guard-secret-writes.mjs", notebook(`GH_TOKEN = "${token}"`)), 2);
+  assert.equal(run("guard-secret-writes.mjs", notebook("print('hello')")), 0);
 });
 
 // A throwaway repository on `main`, so the branch guards have something to refuse.
