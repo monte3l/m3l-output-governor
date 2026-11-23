@@ -12,5 +12,8 @@ Thank you for the change. A few lines here help the review go quickly.
 
 - [ ] `node --test "tests/*.test.mjs"` and `claude plugin validate --strict .` pass
 - [ ] `reuse lint` passes, and `design/README.md` still names the adopted m3l-design version
+- [ ] Every commit is signed off (`git commit -s`) and signed
+- [ ] The title is a Conventional Commit: `feat:`, `fix:` or another type, with `!` for a breaking change. The release notes and version come from it
+- [ ] New behaviour has tests, and a bug fix has a regression test
 - [ ] The README tables and `UNVERIFIED.md` are updated if behaviour changed, and every claim about Claude Code behaviour cites a code.claude.com page or is marked unconfirmed
 - [ ] Nothing prints prompt text, tool output or paths from a transcript, and no live eval was run without approval of its cost
