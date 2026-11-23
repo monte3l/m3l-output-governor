@@ -91,6 +91,18 @@ jobs:
 
       - run: claude plugin validate --strict .
 
+      # org policy, not something `validate` checks: `description` equals the GitHub
+      # repository description, and `keywords`, if set, equal its topics. The script is
+      # the org's verbatim starter (blueprint/files/check-plugin-metadata.mjs in
+      # monte3l/.github). It sits in tools/ci/ and not in bin/, because a plugin's
+      # top-level bin/ goes on the PATH of every user's Bash tool. It reads the live
+      # repository through the token below, so a change to the description or the
+      # topics is made on GitHub first.
+      - name: Plugin metadata matches the GitHub repository
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: node tools/ci/check-plugin-metadata.mjs
+
   # The DCO, enforced by the server and not only by a local hook. Every
   # non-merge commit a pull request adds must carry a `Signed-off-by: Name
   # <email>` trailer whose email is the commit's author or committer email, so

@@ -48,7 +48,7 @@ run the commands in the
 | When | What runs |
 | --- | --- |
 | Before you push | `node --test "tests/*.test.mjs"`, `claude plugin validate --strict .` and `node design/source/docs-kit/build.mjs --check` |
-| On every pull request and every push to `main` | The `verify` workflow runs the unit tests with the coverage gate, the style check, the harness tests, the docs gate, plugin validation and the DCO check. CodeQL, Dependency Review, Gitleaks, REUSE, actionlint, zizmor and commit lint run beside it |
+| On every pull request and every push to `main` | The `verify` workflow runs the unit tests with the coverage gate, the style check, the harness tests, the docs gate, plugin validation, the plugin metadata check (`plugin.json` says what the GitHub repository says) and the DCO check. CodeQL, Dependency Review, Gitleaks, REUSE, actionlint, zizmor and commit lint run beside it |
 | Never in CI | `node evals/p4.mjs --live` and `claude plugin eval`, because they are billed |
 
 ## Dependencies
