@@ -118,12 +118,13 @@ as a `!` command in the prompt, which runs without the hooks, for example
 never committed. To avoid it, run `node --test ".claude/tests/*.test.mjs"` before trusting
 a change to a hook or to settings; they would have caught it.
 
-`guard-secret-writes.mjs` and `guard-double-background.mjs` are verbatim copies of the org
-starters in `monte3l/.github` (`blueprint/files/`) and also exit 2 on a payload that is not
-a JSON object (`could not read the hook payload; blocking`), because `onFailure` covers a
-crash and not a deliberate `exit 0`. If Claude Code ever stopped sending a JSON object on
-stdin, every Bash call and file write would be refused: recover as above. Do not edit the
-two files here; change the starter and let the template sync refresh them.
+`guard-secret-writes.mjs`, `guard-double-background.mjs` and `guard-git-push-signed.mjs` are
+verbatim copies of the org starters in `monte3l/.github` (`blueprint/files/`), as is the push
+guard's helper `lib/signed-range.mjs`. They also exit 2 on a payload that is not a JSON object
+(`could not read the hook payload; blocking`), because `onFailure` covers a crash and not a
+deliberate `exit 0`. If Claude Code ever stopped sending a JSON object on stdin, every Bash
+call and file write would be refused: recover as above. Do not edit these files here; change
+the starter and let the template sync refresh them.
 
 Git workflow, enforced by the hooks above and by the `main` ruleset:
 
