@@ -103,13 +103,13 @@ const run = (file, payload, cwd = CLAUDE) =>
     env: { ...process.env, CLAUDE_PROJECT_DIR: join(CLAUDE, "..") },
   }).status;
 
-// A payload that is not a JSON object cannot be judged. The org starters (guard-secret-writes,
-// guard-double-background) fail closed on it: `onFailure: "block"` covers a crash, not a
-// deliberate `exit 0`, and 0 means allow. An object whose fields are odd is judged by the
-// fields it has, so those payloads still exit 0 everywhere.
-const UNREADABLE = ["", "not json", "null", '"str"', "42", "true"];
+// A payload that is not a JSON object (an array is not one) cannot be judged. The org starters
+// (guard-secret-writes, guard-double-background) fail closed on it: `onFailure: "block"` covers
+// a crash, not a deliberate `exit 0`, and 0 means allow. An object whose fields are odd is
+// judged by the fields it has, so those payloads still exit 0 everywhere.
+const UNREADABLE = ["", "not json", "null", '"str"', "42", "true", "[]"];
 const ODD_OBJECTS = [
-  "[]", "{}", '{"tool_input":null}', '{"tool_input":"x"}',
+  "{}", '{"tool_input":null}', '{"tool_input":"x"}',
   '{"tool_input":{"file_path":42,"command":7,"content":{},"new_string":[],"notebook_path":{}}}',
   '{"agent_type":42,"tool_input":{"command":{}}}', '{"cwd":42,"tool_input":{"command":"ls"}}',
 ];
