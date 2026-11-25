@@ -25,11 +25,7 @@ recommendation. This is ordinary maintenance, not a milestone.
 
 ## Next 12 months
 
-- **First signed release asset.** Tracked in
-  [#57](https://github.com/monte3l/m3l-output-governor/issues/57). The release
-  workflow now attaches a source tarball and its Sigstore bundle. The next
-  release is the first to carry them, and it is the check that the job works end
-  to end.
+Nothing is planned. The next change is whatever the 1.x series needs.
 
 ## Known limits
 
