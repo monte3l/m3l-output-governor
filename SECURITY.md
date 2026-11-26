@@ -105,7 +105,7 @@ credentials the repository's automation uses.
 | --- | --- | --- |
 | `RELEASE_APP_CLIENT_ID`, `RELEASE_APP_PRIVATE_KEY` | Organization secrets, passed by name to the release workflow only | A GitHub App that opens the release pull request, creates the tag and publishes the release |
 | `CLOUDFLARE_API_TOKEN`, `CLOUDFLARE_ACCOUNT_ID` | The `docs-cloudflare` environment, used by the deploy job of `docs.yml` | Deploys the static docs site |
-| `JANITOR_APP_CLIENT_ID`, `JANITOR_APP_PRIVATE_KEY` | Organization secrets, used by `environments.yml` | A GitHub App that deletes stale deployment environments |
+| `JANITOR_APP_CLIENT_ID`, `JANITOR_APP_PRIVATE_KEY` | The `env-janitor` environment, limited to `main`, used by `environments.yml` | A GitHub App that deletes stale deployment environments |
 | `GITLEAKS_LICENSE` | Organization secret shared with this repository | A free license for the Gitleaks action. It reads nothing in the repository |
 
 No workflow holds an Anthropic API key. The live eval uses whichever credential
