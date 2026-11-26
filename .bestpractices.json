@@ -162,7 +162,7 @@
   "osps_le_02_01_status": "Met",
   "osps_le_02_01_justification": "MIT, which meets the OSI Open Source Definition.",
   "osps_le_02_02_status": "Met",
-  "osps_le_02_02_justification": "MIT, which meets the OSI Open Source Definition, and every release is a tag of this repository.",
+  "osps_le_02_02_justification": "The plugin code in each release is MIT (LICENSE), and the two bundled fonts keep OFL-1.1 (design/source/licenses/). The release tarball also carries the MONTE3L logo files in design/source/brand/, which have their own notice and are not under the MIT terms. Every release is a tag of this repository.",
   "osps_le_03_01_status": "Met",
   "osps_le_03_01_justification": "https://github.com/monte3l/m3l-output-governor/blob/main/LICENSE at the repository root.",
   "osps_le_03_02_status": "Met",
