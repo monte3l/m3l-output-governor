@@ -111,8 +111,8 @@ releases), so review the release pull request before you merge it.
    `ref` is the tag and the `sha` is `git rev-parse m3l-output-governor--vX.Y.Z^{}`.
    `bin/bump-pins.mjs --check` there shows a stale pin.
 
-The shared workflows are `release-prepare.yml` and `release-finalize.yml` in
-`monte3l/.github`, and `.github/workflows/release.yml` here calls them. The org
+The shared workflows are `release-prepare.yml` and `release-publish.yml` in
+`monte3l/.github` (`finalize` needs `contents: write` only), and `.github/workflows/release.yml` here calls them. The org
 blueprint's "Releases" section explains the flow.
 
 Rerunning the live eval (`node evals/p4.mjs --live`, about $5) is optional for a
