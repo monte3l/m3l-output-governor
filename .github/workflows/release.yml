@@ -4,7 +4,7 @@ name: Release
 # default branch opens or updates one release pull request (version bump and
 # changelog). Merging that pull request tags the commit and creates a DRAFT
 # release, a repository-specific job may attach assets to it, and `finalize`
-# attests and publishes it.
+# publishes it (the `assets` job already attested the tarball).
 #
 # The two shared workflows are pinned to a full commit SHA like any action:
 # Dependabot's `github-actions` entry keeps the pin current. Everything
@@ -112,12 +112,9 @@ jobs:
     if: needs.prepare.outputs.releases_created == 'true'
     permissions:
       contents: write
-      id-token: write
-      attestations: write
-    uses: monte3l/.github/.github/workflows/release-finalize.yml@490d616b98cf8a798c021a2c893ea496bc0acc43 # release-baseline
+    uses: monte3l/.github/.github/workflows/release-publish.yml@8d0aae31248de42005dadf78f1285487ba08880d # release-baseline
     with:
       tag: ${{ needs.prepare.outputs.tag_name }}
-      attest: false # the `assets` job attested the tarball and attached its bundle
       notify: '["m3l-plugins"]'
     secrets:
       RELEASE_APP_CLIENT_ID: ${{ secrets.RELEASE_APP_CLIENT_ID }}
