@@ -12,7 +12,8 @@ name: Verify
 # Only the `plugin` lane installs anything. Claude Code comes from
 # tools/ci/, whose committed lockfile pins it by integrity hash. Its
 # install script runs (it fetches the native binary), so every lane holds
-# read-only permissions and no secrets. `claude plugin validate` runs without
+# read-only permissions and no repository secrets (the metadata check gets
+# the read-only GITHUB_TOKEN after npm ci). `claude plugin validate` runs without
 # an API key. The docs kit's `--check` needs only Node and git. The live eval
 # (`evals/p4.mjs --live`) needs a key and is deliberately never run in CI.
 on:

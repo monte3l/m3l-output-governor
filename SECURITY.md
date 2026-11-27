@@ -166,8 +166,9 @@ resolves to is the one the tag points at.
 > Accepted risk: the `plugin` lane of `verify.yml` installs
 > `@anthropic-ai/claude-code` from `tools/ci/` **with** its install script, because the script fetches
 > the native binary. The lockfile pins the package by integrity hash, Dependabot
-> proposes bumps after a one-day cooldown, and the job holds read-only
-> permissions and no secrets.
+> proposes bumps after a one-day cooldown (`/tools/ci` in `dependabot.yml`), and
+> the job holds read-only permissions and no repository secrets. The metadata
+> check gets the read-only `GITHUB_TOKEN` after `npm ci`.
 
 ## Accepted OpenSSF Scorecard findings
 
