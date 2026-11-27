@@ -93,5 +93,6 @@ credentials. The architecture is in [Architecture](architecture.md).
   make the script count wrongly. It does not make it print more.
 - **The accepted CI install script.** The `plugin` lane installs Claude Code
   with its install script. The lockfile pins it by hash, and the job has
-  read-only permissions and no secrets (see [`SECURITY.md`](../SECURITY.md)).
+  read-only permissions and no repository secrets. The metadata check gets the
+  read-only `GITHUB_TOKEN` after `npm ci` (see [`SECURITY.md`](../SECURITY.md)).
 - **One maintainer.** See [Governance](GOVERNANCE.md#bus-factor).
